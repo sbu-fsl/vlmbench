@@ -27,10 +27,7 @@ import sys
 from benchmarks import REGISTRY, list_all
 from src.utils import assert_server_up, detect_model
 from src.worker import Worker
-
-REQUEST_TIMEOUT = 600  # seconds
-DEFAULT_ENDPOINT = "http://127.0.0.1:8080"
-DEFAULT_DATA_DIR = "./data"
+from vars import DEFAULT_DATA_DIR, DEFAULT_ENDPOINT, REQUEST_TIMEOUT
 
 
 def run_benchmark(name, benchmark, endpoint):
@@ -62,7 +59,7 @@ def run_benchmark(name, benchmark, endpoint):
 
 def main():
     ap = argparse.ArgumentParser(
-        description="vLLM Benchmark Runner — connects to a running vLLM instance"
+        description="VLMBench — connects to a running vLLM instance"
     )
     ap.add_argument(
         "--list", action="store_true", help="List available benchmarks and exit"

@@ -1,0 +1,3 @@
+REQUEST_TIMEOUT = 600  # seconds
+DEFAULT_ENDPOINT = "http://127.0.0.1:8080"
+DEFAULT_DATA_DIR = "./data"
