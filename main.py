@@ -51,7 +51,11 @@ def run_benchmark(name, benchmark, endpoint):
 
         w.process(name=name, url=url, headers=headers, payload=payload)
 
-    n, ok, fail = w.stats()
+    stats = w.stats()
+    n = stats["total_requests"]
+    ok = stats["success"]
+    fail = stats["http_error"] + stats["timeout"] + stats["exception"]
+
     print(f"--- {name}: {n} requests, {ok} ok, {fail} failed ---")
 
     return n, ok, fail
