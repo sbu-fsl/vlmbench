@@ -24,31 +24,13 @@ import argparse
 import os
 import sys
 
-import requests
-
 from benchmarks import REGISTRY, list_all
+from src.utils import assert_server_up, detect_model
+from src.worker import Worker
 
 REQUEST_TIMEOUT = 600  # seconds
 DEFAULT_ENDPOINT = "http://127.0.0.1:8080"
 DEFAULT_DATA_DIR = "./data"
-
-
-def detect_model(endpoint: str) -> str:
-    """Auto-detect the served model from the /v1/models endpoint."""
-    r = requests.get(f"{endpoint.rstrip('/')}/v1/models", timeout=10)
-    r.raise_for_status()
-    models = [m.get("id") for m in r.json().get("data", []) if m.get("id")]
-    if not models:
-        print("Error: No models found at endpoint.", file=sys.stderr)
-        sys.exit(1)
-    if len(models) > 1:
-        print(f"Multiple models found: {models}. Using first: {models[0]}", file=sys.stderr)
-    return models[0]
-
-
-def assert_server_up(endpoint: str, timeout_s: float = 5.0):
-    r = requests.get(f"{endpoint.rstrip('/')}/health", timeout=timeout_s)
-    r.raise_for_status()
 
 
 def run_benchmark(name, benchmark, endpoint):
@@ -57,9 +39,7 @@ def run_benchmark(name, benchmark, endpoint):
     and print the status code for each.
     """
     print(f"\n=== Benchmark: {name} ===")
-    n = 0
-    ok = 0
-    fail = 0
+    w = Worker(REQUEST_TIMEOUT)
 
     for result in benchmark.run():
         uri = result["uri"]
@@ -72,29 +52,11 @@ def run_benchmark(name, benchmark, endpoint):
         url = f"{endpoint.rstrip('/')}/v1{uri}"
         headers = {"Content-Type": "application/json"}
 
-        try:
-            response = requests.post(
-                url, headers=headers, json=payload, timeout=REQUEST_TIMEOUT
-            )
-            status = response.status_code
-            if status < 400:
-                ok += 1
-            else:
-                fail += 1
-            n += 1
-            print(f"  [{status}] {name} #{n}")
+        w.process(name=name, url=url, headers=headers, payload=payload)
 
-        except requests.exceptions.Timeout:
-            fail += 1
-            n += 1
-            print(f"  [TIMEOUT] {name} #{n}")
-
-        except Exception as e:
-            fail += 1
-            n += 1
-            print(f"  [ERROR] {name} #{n}: {e}")
-
+    n, ok, fail = w.stats()
     print(f"--- {name}: {n} requests, {ok} ok, {fail} failed ---")
+
     return n, ok, fail
 
 
@@ -177,7 +139,9 @@ def main():
         total_ok += ok
         total_fail += fail
 
-    print(f"\n=== All done: {total_n} total requests, {total_ok} ok, {total_fail} failed ===")
+    print(
+        f"\n=== All done: {total_n} total requests, {total_ok} ok, {total_fail} failed ==="
+    )
 
     if total_fail > 0:
         sys.exit(1)
