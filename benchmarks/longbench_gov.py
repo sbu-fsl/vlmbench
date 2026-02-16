@@ -1,65 +1,31 @@
-"""LongBench government report summarization benchmark tasks."""
+"""LongBench government report summarization benchmark."""
 
-from typing import Iterable
-
-from .base import Sample, Task, WorkloadOpts
-from .evaluators import RougeLEvaluator
-from .loaders import _load_longbench_manual
-from .utils import _to_text, require
+from dataloaders.longbench_dataset import LongBenchDataset
+from src.benchmark import Benchmark
+from tasks.completion import Completion
 
 
-class LongBenchGov(Task):
-    """LongBench summarization subsets -> ROUGE-L"""
-
-    name = "longbench_gov"
-
-    def __init__(self, opts: WorkloadOpts):
-        super().__init__(opts)
-        self.evaluator = RougeLEvaluator()
-
-    def load(self) -> Iterable[Sample]:
-        require(["datasets"])
-        # LongBench dataset scripts no longer supported, use manual loader
-        ds = _load_longbench_manual("gov_report", self.opts.cache_dir)
-        for i, row in enumerate(ds):
-            doc = _to_text(row.get("context") or row.get("input"))
-            # LongBench stores answer/summary in "answers" field (list)
-            answers = row.get("answers", [])
-            summ = _to_text(answers[0] if answers else "")
-            if not doc or not summ:
-                continue
-            prompt = f"Summarize the following government report succinctly:\n\n{doc}"
-            yield Sample(
-                id=f"lbg-{i}",
-                prompt=prompt,
-                messages=[{"role": "user", "content": prompt}],
-                references=[summ],
-                extra={},
-            )
+def _to_text(x):
+    if x is None:
+        return ""
+    if isinstance(x, str):
+        return x
+    return str(x)
 
 
-class LongBenchGovBeam(Task):
-    """LongBench gov_report with beam search for summarization."""
+class LongBenchGovBenchmark(Benchmark):
+    """LongBench: government report summarization."""
 
-    name = "longbench_gov"
+    def build_input(self, entry):
+        doc = _to_text(entry.get("context") or entry.get("input"))
+        if not doc:
+            return "", {}
+        prompt = f"Summarize the following government report succinctly:\n\n{doc}"
+        opts = {"temperature": 0.7, "max_tokens": 512, "top_p": 0.95}
+        return prompt, opts
 
-    def __init__(self, opts: WorkloadOpts):
-        super().__init__(opts)
-        self.evaluator = RougeLEvaluator()
-
-    def load(self) -> Iterable[Sample]:
-        ds = _load_longbench_manual("gov_report", self.opts.cache_dir)
-        for i, row in enumerate(ds):
-            doc = _to_text(row.get("context") or row.get("input"))
-            answers = row.get("answers", [])
-            summ = _to_text(answers[0] if answers else "")
-            if not doc or not summ:
-                continue
-            prompt = f"Summarize the following government report succinctly:\n\n{doc}"
-            yield Sample(
-                id=f"beam-lbg-{i}",
-                prompt=prompt,
-                messages=[{"role": "user", "content": prompt}],
-                references=[summ],
-                extra={},
-            )
+    @classmethod
+    def create(cls, model: str, cache_dir: str) -> "LongBenchGovBenchmark":
+        dataset = LongBenchDataset("gov_report", cache_dir, limit=100)
+        task = Completion(model=model)
+        return cls(dataset, task)

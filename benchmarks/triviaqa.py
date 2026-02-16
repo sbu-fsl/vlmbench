@@ -1,114 +1,45 @@
-"""TriviaQA benchmark tasks."""
+"""TriviaQA question-answering benchmark."""
 
-from typing import Iterable
-
-from .base import Sample, Task, WorkloadOpts
-from .evaluators import EMF1Evaluator
-from .loaders import _hf_load
-from .utils import _short_answer, _to_text
+from dataloaders.hf_dataset import HFDataset
+from src.benchmark import Benchmark
+from tasks.completion import Completion
 
 
-class TriviaQATask(Task):
-    """TriviaQA (rc) validation -> EM/F1"""
-
-    name = "triviaqa"
-
-    def __init__(self, opts: WorkloadOpts):
-        super().__init__(opts)
-        self.evaluator = EMF1Evaluator()
-
-    def load(self) -> Iterable[Sample]:
-        ds = _hf_load("trivia_qa", "rc", "validation", self.opts.cache_dir)
-        for i, row in enumerate(ds):
-            q = _to_text(row.get("question"))
-            aobj = row.get("answer") or {}
-            golds = []
-            if isinstance(aobj, dict):
-                golds.append(_to_text(aobj.get("value")))
-                golds += [x for x in (aobj.get("aliases") or []) if x]
-            golds = [g for g in golds if g]
-            if not q or not golds:
-                continue
-            prompt = (
-                "Answer the following question with a short phrase or name ONLY.\n"
-                "Do not include explanations.\n\n"
-                f"Question: {q}\nFinal answer:"
-            )
-            yield Sample(
-                id=f"tqa-{i}",
-                prompt=prompt,
-                messages=[{"role": "user", "content": prompt}],
-                references=golds,
-                extra={},
-            )
-
-    def postprocess_pred(self, pred: str, sample: "Sample") -> str:
-        return _short_answer(pred)
+def _to_text(x):
+    if x is None:
+        return ""
+    if isinstance(x, str):
+        return x
+    if isinstance(x, dict):
+        for k in ("text", "value", "answer", "content"):
+            if k in x:
+                return _to_text(x[k])
+    if isinstance(x, (list, tuple)):
+        for y in x:
+            t = _to_text(y)
+            if t:
+                return t
+        return ""
+    return str(x)
 
 
-class TriviaQASPSR(Task):
-    """TriviaQA in single-prompt format."""
+class TriviaQABenchmark(Benchmark):
+    """TriviaQA: short-answer question answering."""
 
-    name = "triviaqa"
+    def build_input(self, entry):
+        q = _to_text(entry.get("question"))
+        if not q:
+            return "", {}
+        prompt = (
+            "Answer the following question with a short phrase or name ONLY.\n"
+            "Do not include explanations.\n\n"
+            f"Question: {q}\nFinal answer:"
+        )
+        opts = {"temperature": 0.0, "max_tokens": 256}
+        return prompt, opts
 
-    def __init__(self, opts: WorkloadOpts):
-        super().__init__(opts)
-        self.evaluator = EMF1Evaluator()
-
-    def load(self) -> Iterable[Sample]:
-        ds = _hf_load("trivia_qa", "rc", "validation", self.opts.cache_dir)
-        for i, row in enumerate(ds):
-            q = _to_text(row.get("question"))
-            aobj = row.get("answer") or {}
-            golds = []
-            if isinstance(aobj, dict):
-                golds.append(_to_text(aobj.get("value")))
-                golds += [x for x in (aobj.get("aliases") or []) if x]
-            golds = [g for g in golds if g]
-            if not q or not golds:
-                continue
-            prompt = f"Answer the following question with a short phrase or name ONLY.\n\nQuestion: {q}\nFinal answer:"
-            yield Sample(
-                id=f"spsr-tqa-{i}",
-                prompt=prompt,
-                messages=[{"role": "user", "content": prompt}],
-                references=golds,
-                extra={},
-            )
-
-    def postprocess_pred(self, pred: str, sample: "Sample") -> str:
-        return _short_answer(pred)
-
-
-class TriviaQABeam(Task):
-    """TriviaQA with beam search."""
-
-    name = "triviaqa"
-
-    def __init__(self, opts: WorkloadOpts):
-        super().__init__(opts)
-        self.evaluator = EMF1Evaluator()
-
-    def load(self) -> Iterable[Sample]:
-        ds = _hf_load("trivia_qa", "rc", "validation", self.opts.cache_dir)
-        for i, row in enumerate(ds):
-            q = _to_text(row.get("question"))
-            aobj = row.get("answer") or {}
-            golds = []
-            if isinstance(aobj, dict):
-                golds.append(_to_text(aobj.get("value")))
-                golds += [x for x in (aobj.get("aliases") or []) if x]
-            golds = [g for g in golds if g]
-            if not q or not golds:
-                continue
-            prompt = f"Answer the following question with a short phrase or name ONLY.\n\nQuestion: {q}\nFinal answer:"
-            yield Sample(
-                id=f"beam-tqa-{i}",
-                prompt=prompt,
-                messages=[{"role": "user", "content": prompt}],
-                references=golds,
-                extra={},
-            )
-
-    def postprocess_pred(self, pred: str, sample: "Sample") -> str:
-        return _short_answer(pred)
+    @classmethod
+    def create(cls, model: str, cache_dir: str) -> "TriviaQABenchmark":
+        dataset = HFDataset("trivia_qa", "rc.nocontext", "validation", cache_dir, limit=100)
+        task = Completion(model=model)
+        return cls(dataset, task)

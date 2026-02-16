@@ -1,42 +1,48 @@
 """LooGLE legal text summarization benchmark."""
 
-from typing import Iterable
-
-from .base import Sample, Task, WorkloadOpts
-from .evaluators import RougeLEvaluator
-from .loaders import _hf_load
-from .utils import _to_text
+from dataloaders.hf_dataset import HFDataset
+from src.benchmark import Benchmark
+from tasks.completion import Completion
 
 
-class LooGLE(Task):
-    """LooGLE summarization -> ROUGE-L"""
+def _to_text(x):
+    if x is None:
+        return ""
+    if isinstance(x, str):
+        return x
+    if isinstance(x, dict):
+        for k in ("text", "value", "answer", "content", "document", "summary", "target"):
+            if k in x:
+                return _to_text(x[k])
+    if isinstance(x, (list, tuple)):
+        for y in x:
+            t = _to_text(y)
+            if t:
+                return t
+        return ""
+    return str(x)
 
-    name = "loogle"
 
-    def __init__(self, opts: WorkloadOpts):
-        super().__init__(opts)
-        self.evaluator = RougeLEvaluator()
+class LooGLEBenchmark(Benchmark):
+    """LooGLE: legal text summarization."""
 
-    def load(self) -> Iterable[Sample]:
-        # Load LooGLE dataset - fail if not available
-        ds = _hf_load("bigai-nlco/LooGLE", "summarization", "test", self.opts.cache_dir)
-        for i, row in enumerate(ds):
-            doc = _to_text(
-                row.get("document")
-                or row.get("context")
-                or row.get("text")
-                or row.get("passage")
-            )
-            summ = _to_text(
-                row.get("summary") or row.get("target") or row.get("answer")
-            )
-            if not doc or not summ:
-                continue
-            prompt = f"Summarize the following legal text concisely:\n\n{doc}"
-            yield Sample(
-                id=f"loogle-summarization-{i}",
-                prompt=prompt,
-                messages=[{"role": "user", "content": prompt}],
-                references=[summ],
-                extra={"subset": "summarization"},
-            )
+    def build_input(self, entry):
+        doc = _to_text(
+            entry.get("document")
+            or entry.get("context")
+            or entry.get("text")
+            or entry.get("passage")
+        )
+        if not doc:
+            return "", {}
+        prompt = f"Summarize the following legal text concisely:\n\n{doc}"
+        opts = {"temperature": 0.7, "max_tokens": 512, "top_p": 0.95}
+        return prompt, opts
+
+    @classmethod
+    def create(cls, model: str, cache_dir: str) -> "LooGLEBenchmark":
+        dataset = HFDataset(
+            "bigai-nlco/LooGLE", "summarization", "test", cache_dir, limit=100
+        )
+        task = Completion(model=model)
+        return cls(dataset, task)

@@ -1,6 +1,3 @@
 requests
 datasets
-rouge-score
-tiktoken
 huggingface_hub
-orjson

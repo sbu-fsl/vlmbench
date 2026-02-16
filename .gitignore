@@ -178,6 +178,6 @@ pyrightconfig.json
 # Custom ignores
 k8s
 runs
-.hf-cache
+data
 __pycache__
 .venv

@@ -1,36 +1,30 @@
 """Alpaca instruction-following benchmark."""
 
-from typing import Iterable
-
-from .base import Sample, Task, WorkloadOpts
-from .evaluators import EMF1Evaluator
-from .loaders import _hf_load
-from .utils import _to_text, require
+from dataloaders.hf_dataset import HFDataset
+from src.benchmark import Benchmark
+from tasks.completion import Completion
 
 
-class AlpacaSPSR(Task):
-    """Alpaca instruction-following in single-turn format."""
+def _to_text(x):
+    if x is None:
+        return ""
+    if isinstance(x, str):
+        return x
+    return str(x)
 
-    name = "alpaca"
 
-    def __init__(self, opts: WorkloadOpts):
-        super().__init__(opts)
-        self.evaluator = EMF1Evaluator(name="null")
+class AlpacaBenchmark(Benchmark):
+    """Alpaca instruction-following: generates responses to instructions."""
 
-    def load(self) -> Iterable[Sample]:
-        require(["datasets"])
-        ds = _hf_load("yahma/alpaca-cleaned", None, "train", self.opts.cache_dir)
-        for i, row in enumerate(ds):
-            inst = _to_text(row.get("instruction"))
-            inp = _to_text(row.get("input"))
-            out = _to_text(row.get("output"))
-            if not inst or not out:
-                continue
-            prompt = inst if not inp else f"{inst}\n\nInput: {inp}"
-            yield Sample(
-                id=f"alpaca-{i}",
-                prompt=prompt,
-                messages=[{"role": "user", "content": prompt}],
-                references=[out],
-                extra={},
-            )
+    def build_input(self, entry):
+        inst = _to_text(entry.get("instruction"))
+        inp = _to_text(entry.get("input"))
+        prompt = inst if not inp else f"{inst}\n\nInput: {inp}"
+        opts = {"temperature": 0.0, "max_tokens": 512}
+        return prompt, opts
+
+    @classmethod
+    def create(cls, model: str, cache_dir: str) -> "AlpacaBenchmark":
+        dataset = HFDataset("yahma/alpaca-cleaned", None, "train", cache_dir, limit=100)
+        task = Completion(model=model)
+        return cls(dataset, task)
