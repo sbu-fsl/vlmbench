@@ -5,10 +5,10 @@ from .humaneval import HumanEvalBenchmark
 from .kvprobe import KVProbeBenchmark
 from .leval import LEvalBenchmark
 from .longbench_gov import LongBenchGovBenchmark
-from .longbench_qmsum import LongBenchQMSumBenchmark
+from .longbench_qmsum import LongBenchQMSumBenchmark, LocalLongBenchQMSumBenchmark
 from .loogle import LooGLEBenchmark
-from .narrativeqa import NarrativeQABenchmark
-from .sharegpt import ShareGPTBenchmark
+from .narrativeqa import NarrativeQABenchmark, LocalNarrativeQABenchmark
+from .sharegpt import ShareGPTBenchmark, LocalShareGPTBenchmark
 from .triviaqa import TriviaQABenchmark
 from .wikitext import WikitextBenchmark
 
@@ -17,13 +17,16 @@ REGISTRY = {
     "local_alpaca": LocalAlpacaBenchmark,
     "triviaqa": TriviaQABenchmark,
     "narrativeqa": NarrativeQABenchmark,
+    "local_narrativeqa": LocalNarrativeQABenchmark,
     "wikitext": WikitextBenchmark,
     "humaneval": HumanEvalBenchmark,
     "longbench_gov": LongBenchGovBenchmark,
     "longbench_qmsum": LongBenchQMSumBenchmark,
+    "local_longbench_qmsum": LocalLongBenchQMSumBenchmark,
     "leval": LEvalBenchmark,
     "kvprobe": KVProbeBenchmark,
     "sharegpt": ShareGPTBenchmark,
+    "local_sharegpt": LocalShareGPTBenchmark,
     "loogle": LooGLEBenchmark,
 }
 
