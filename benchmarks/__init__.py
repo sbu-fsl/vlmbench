@@ -5,12 +5,13 @@ from .humaneval import HumanEvalBenchmark
 from .kvprobe import KVProbeBenchmark
 from .leval import LEvalBenchmark
 from .longbench_gov import LongBenchGovBenchmark
-from .longbench_qmsum import LongBenchQMSumBenchmark, LocalLongBenchQMSumBenchmark
+from .longbench_qmsum import LocalLongBenchQMSumBenchmark, LongBenchQMSumBenchmark
 from .loogle import LooGLEBenchmark
-from .narrativeqa import NarrativeQABenchmark, LocalNarrativeQABenchmark
-from .sharegpt import ShareGPTBenchmark, LocalShareGPTBenchmark
+from .narrativeqa import LocalNarrativeQABenchmark, NarrativeQABenchmark
+from .sharegpt import LocalShareGPTBenchmark, ShareGPTBenchmark
 from .triviaqa import TriviaQABenchmark
 from .wikitext import WikitextBenchmark
+from .wmt16 import WMT16Benchmark
 
 REGISTRY = {
     "alpaca": AlpacaBenchmark,
@@ -28,6 +29,7 @@ REGISTRY = {
     "sharegpt": ShareGPTBenchmark,
     "local_sharegpt": LocalShareGPTBenchmark,
     "loogle": LooGLEBenchmark,
+    "wmt16": WMT16Benchmark,
 }
 
 
