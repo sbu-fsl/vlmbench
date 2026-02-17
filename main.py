@@ -38,7 +38,7 @@ def run_benchmark(vars: Dict[str, Any], name: str, benchmark: Benchmark, endpoin
     and print the status code for each.
     """
     print(f"\n=== Benchmark: {name} ===")
-    w = Worker(timeout=vars["REQUEST_TIMEOUT"])
+    w = Worker(request_timeout=vars["REQUEST_TIMEOUT"])
 
     for result in benchmark.run():
         uri = result["uri"]

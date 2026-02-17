@@ -26,7 +26,7 @@ class AlpacaBenchmark(Benchmark):
 
     @classmethod
     def create(cls, model: str, cache_dir: str) -> "AlpacaBenchmark":
-        dataset = HFDataset("yahma/alpaca-cleaned", None, "train", cache_dir, limit=100)
+        dataset = HFDataset("yahma/alpaca-cleaned", None, "train", cache_dir, limit=3)
         task = Completion(model=model)
         return cls(dataset, task)
 
