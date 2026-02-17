@@ -1,6 +1,6 @@
 """Benchmark registry."""
 
-from .alpaca import AlpacaBenchmark
+from .alpaca import AlpacaBenchmark, LocalAlpacaBenchmark
 from .humaneval import HumanEvalBenchmark
 from .kvprobe import KVProbeBenchmark
 from .leval import LEvalBenchmark
@@ -14,6 +14,7 @@ from .wikitext import WikitextBenchmark
 
 REGISTRY = {
     "alpaca": AlpacaBenchmark,
+    "local_alpaca": LocalAlpacaBenchmark,
     "triviaqa": TriviaQABenchmark,
     "narrativeqa": NarrativeQABenchmark,
     "wikitext": WikitextBenchmark,
