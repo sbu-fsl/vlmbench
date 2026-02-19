@@ -21,7 +21,7 @@ class LocalDataset(Dataset):
             return
 
         self._data = []
-        with open(self.address, "r", newline="", encoding="utf-8") as f:
+        with open(self.address(), "r", newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             for i, row in enumerate(reader):
                 if self._limit is not None and i >= self._limit:
