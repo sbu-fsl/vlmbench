@@ -27,7 +27,7 @@ class WMT16Benchmark(Benchmark):
         return prompt, opts
 
     @classmethod
-    def create(cls, model: str, _: str) -> "WMT16Benchmark":
+    def create(cls, model: str, cache_dir: str) -> "WMT16Benchmark":
         dataset = LocalDataset("/mnt/gpfs/llm-datasets/wmt16.csv", limit=100)
         task = Completion(model=model)
         return cls(dataset, task)

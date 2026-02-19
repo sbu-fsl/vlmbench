@@ -60,7 +60,7 @@ class LocalNarrativeQABenchmark(Benchmark):
         return prompt, opts
 
     @classmethod
-    def create(cls, model: str, _: str) -> "LocalNarrativeQABenchmark":
+    def create(cls, model: str, cache_dir: str) -> "LocalNarrativeQABenchmark":
         dataset = LocalDataset("/mnt/gpfs/llm-datasets/narrativeqa.csv", limit=100)
         task = Completion(model=model)
         return cls(dataset, task)

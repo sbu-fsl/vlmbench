@@ -42,7 +42,7 @@ class LocalAlpacaBenchmark(Benchmark):
         return prompt, opts
 
     @classmethod
-    def create(cls, model: str, _: str) -> "LocalAlpacaBenchmark":
+    def create(cls, model: str, cache_dir: str) -> "LocalAlpacaBenchmark":
         dataset = LocalDataset("/mnt/gpfs/llm-datasets/alpaca.csv", limit=100)
         task = Completion(model=model)
         return cls(dataset, task)

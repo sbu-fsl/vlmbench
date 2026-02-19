@@ -58,7 +58,7 @@ class LocalShareGPTBenchmark(Benchmark):
         return prompt, opts
 
     @classmethod
-    def create(cls, model: str, _: str) -> "ShareGPTBenchmark":
+    def create(cls, model: str, cache_dir: str) -> "ShareGPTBenchmark":
         dataset = LocalDataset("/mnt/gpfs/llm-datasets/sharegpt.csv", limit=100)
         task = Completion(model=model)
         return cls(dataset, task)
