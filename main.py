@@ -40,7 +40,12 @@ def run_benchmark(vars: Dict[str, Any], name: str, benchmark: Benchmark, endpoin
     print(f"\n=== Benchmark: {name} ===")
     w = Worker(request_timeout=vars["REQUEST_TIMEOUT"])
 
+    count = 0
     for result in benchmark.run():
+        count += 1
+        if count == 10:
+            break  # For quick testing; remove this line to run the full benchmark
+        
         uri = result["uri"]
         payload = result["payload"]
 
