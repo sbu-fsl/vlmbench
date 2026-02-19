@@ -43,6 +43,6 @@ class LocalAlpacaBenchmark(Benchmark):
 
     @classmethod
     def create(cls, model: str, _: str) -> "LocalAlpacaBenchmark":
-        dataset = LocalDataset("alpaca.csv", limit=100)
+        dataset = LocalDataset("/mnt/gpfs/llm-datasets/alpaca.csv", limit=100)
         task = Completion(model=model)
         return cls(dataset, task)

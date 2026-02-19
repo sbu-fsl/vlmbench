@@ -45,6 +45,6 @@ class LocalLongBenchQMSumBenchmark(Benchmark):
 
     @classmethod
     def create(cls, model: str, _: str) -> "LocalLongBenchQMSumBenchmark":
-        dataset = LocalDataset("qmsum.csv", limit=100)
+        dataset = LocalDataset("/mnt/gpfs/llm-datasets/qmsum.csv", limit=100)
         task = Completion(model=model)
         return cls(dataset, task)

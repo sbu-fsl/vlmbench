@@ -49,7 +49,7 @@ class LocalNarrativeQABenchmark(Benchmark):
     """NarrativeQA: abstractive question answering."""
 
     def build_input(self, entry):
-        q = _to_text(entry.get("question"))
+        q = _to_text(entry.get("context") or entry.get("input"))
         if not q:
             return "", {}
         prompt = (
@@ -61,6 +61,6 @@ class LocalNarrativeQABenchmark(Benchmark):
 
     @classmethod
     def create(cls, model: str, _: str) -> "LocalNarrativeQABenchmark":
-        dataset = LocalDataset("narrativeqa.csv", limit=100)
+        dataset = LocalDataset("/mnt/gpfs/llm-datasets/narrativeqa.csv", limit=100)
         task = Completion(model=model)
         return cls(dataset, task)
