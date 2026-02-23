@@ -20,6 +20,9 @@ class Benchmark(ABC):
     def run_one(self):
         """Run benchmark on a single dataset entry."""
         entry = self.dataset.next()
+        if entry is None:
+            return "", {}
+        
         prompt, opts = self.build_input(entry)
         return self.task.payload(prompt, opts)
 

@@ -23,16 +23,22 @@ Examples:
 import argparse
 import os
 import sys
-from typing import Dict, Any
+from typing import Any, Dict
 
-from src import Benchmark
 from benchmarks import REGISTRY, list_all
+from src import Benchmark
 from src.utils import assert_server_up, detect_model
 from src.worker import Worker
 from vars import init_vars
 
 
-def run_benchmark(vars: Dict[str, Any], name: str, benchmark: Benchmark, endpoint: str, stop_after: int = 0):
+def run_benchmark(
+    vars: Dict[str, Any],
+    name: str,
+    benchmark: Benchmark,
+    endpoint: str,
+    stop_after: int = 0,
+):
     """
     Run a single benchmark: iterate its entries, send HTTP requests,
     and print the status code for each.
@@ -45,7 +51,7 @@ def run_benchmark(vars: Dict[str, Any], name: str, benchmark: Benchmark, endpoin
         count += 1
         if stop_after > 0 and count > stop_after:
             break
-        
+
         uri = result["uri"]
         payload = result["payload"]
 
@@ -151,7 +157,9 @@ def main():
     for name in args.benchmarks:
         bench_cls = REGISTRY[name]
         benchmark = bench_cls.create(model=model, cache_dir=data_dir)
-        n, ok, fail = run_benchmark(vars, name, benchmark, endpoint, stop_after=args.stop_after)
+        n, ok, fail = run_benchmark(
+            vars, name, benchmark, endpoint, stop_after=args.stop_after
+        )
         total_n += n
         total_ok += ok
         total_fail += fail
