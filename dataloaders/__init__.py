@@ -36,11 +36,11 @@ class LocalDataset(Dataset):
         return total
 
     def next(self):
-        """Return next row or None if exhausted."""
+        """Return next row or stop iteration if exhausted."""
         self._load()
 
         if self._idx >= len(self._data):
-            return None
+            raise StopIteration
 
         item = self._data[self._idx]
         self._idx += 1
