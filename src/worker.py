@@ -123,12 +123,16 @@ class Worker(threading.Thread):
         start = time.perf_counter()
 
         try:
+            print(f"[REQUEST] {name} {self.name} sending request of size {request_size}B to {url}")
+
             response = requests.post(
                 url,
                 headers=headers,
                 json=payload,
                 timeout=self._rto,
             )
+            
+            print(f"[RESPONSE] {name} {self.name} received response with status {response.status_code}")
 
             latency = (time.perf_counter() - start) * 1000
 
