@@ -32,6 +32,7 @@ from src import Benchmark
 from src.utils import assert_server_up, detect_max_model_len, detect_model, truncate_payload
 from src.worker import Worker, WorkerStats
 from vars import init_vars
+from warmup import run_warmup_plugin
 
 
 def run_benchmark(
@@ -191,6 +192,23 @@ def main():
         help="Number of concurrent client workers (default: 1)",
     )
     ap.add_argument(
+        "--warmup",
+        action="store_true",
+        help="Run warmup plugin before benchmarks",
+    )
+    ap.add_argument(
+        "--total-kv-tokens",
+        type=int,
+        default=0,
+        help="Total KV cache tokens (required with --warmup)",
+    )
+    ap.add_argument(
+        "--warmup-target-utilization",
+        type=float,
+        default=0.95,
+        help="Warmup target KV utilization in [0, 1] (default: 0.95)",
+    )
+    ap.add_argument(
         "benchmarks",
         nargs="*",
         help="Benchmark names to run",
@@ -206,13 +224,24 @@ def main():
             print(f"  {name}")
         return
 
-    if not args.benchmarks:
+    if not args.benchmarks and not args.warmup:
         ap.print_usage()
-        print("Error: specify at least one benchmark (or use --list).", file=sys.stderr)
+        print(
+            "Error: specify at least one benchmark, or use --warmup (or use --list).",
+            file=sys.stderr,
+        )
         sys.exit(2)
 
     if args.clients < 1:
         print("Error: --clients must be >= 1.", file=sys.stderr)
+        sys.exit(2)
+
+    if args.warmup and args.total_kv_tokens <= 0:
+        print("Error: --total-kv-tokens must be > 0 when --warmup is set.", file=sys.stderr)
+        sys.exit(2)
+
+    if not (0.0 < args.warmup_target_utilization <= 1.0):
+        print("Error: --warmup-target-utilization must be in (0, 1].", file=sys.stderr)
         sys.exit(2)
 
     # Validate benchmark names
@@ -239,9 +268,25 @@ def main():
     print(f"Model: {model}")
 
     max_model_len = 0
-    if args.truncate:
+    if args.truncate or args.warmup:
         max_model_len = detect_max_model_len(endpoint)
-        print(f"Max model length: {max_model_len} (truncation enabled)")
+        if args.truncate:
+            print(f"Max model length: {max_model_len} (truncation enabled)")
+        else:
+            print(f"Max model length: {max_model_len}")
+
+    if args.warmup:
+        run_warmup_plugin(
+            endpoint=endpoint,
+            model=model,
+            max_model_len=max_model_len,
+            total_kv_tokens=args.total_kv_tokens,
+            target_utilization=args.warmup_target_utilization,
+        )
+
+    if not args.benchmarks:
+        print("No benchmarks requested; exiting after warmup.")
+        return
 
     os.makedirs(data_dir, exist_ok=True)
 

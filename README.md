@@ -21,6 +21,9 @@ python main.py --list
 
 # Run benchmarks against a vLLM endpoint
 python main.py [--endpoint URL] [--model MODEL] [--data-dir DIR] [--clients N] benchmark1 [benchmark2 ...]
+
+# Run warmup plugin only
+python main.py --warmup --total-kv-tokens 8388608
 ```
 
 ### Options
@@ -30,6 +33,10 @@ python main.py [--endpoint URL] [--model MODEL] [--data-dir DIR] [--clients N] b
 * `--data-dir DIR` — Dataset cache directory (default: `./data`)
 * `--stop-after N` — Stop after processing N entries (for quick testing; default: 0, meaning no limit)
 * `--clients N` — Number of concurrent client workers (default: `1`)
+* `--truncate` - Truncate input requests based on the maximum model len
+* `--warmup` — Run warmup plugin before benchmarks (or standalone)
+* `--total-kv-tokens N` — Total KV cache tokens (required with `--warmup`)
+* `--warmup-target-utilization F` — Warmup target KV utilization in `(0, 1]` (default: `0.95`)
 
 ### Examples
 
@@ -45,23 +52,13 @@ python main.py --data-dir /tmp/datasets narrativeqa
 
 # Run with 10 concurrent clients
 python main.py --clients 10 narrativeqa
+
+# Warmup then run benchmarks
+python main.py --warmup --total-kv-tokens 8388608 narrativeqa
+
+# Warmup only
+python main.py --warmup --total-kv-tokens 8388608
 ```
-
-## Available Benchmarks
-
-| Benchmark         | Description                       |
-|-------------------|-----------------------------------|
-| `alpaca`          | Instruction following             |
-| `humaneval`       | Python code generation            |
-| `kvprobe`         | KV cache efficiency test          |
-| `leval`           | Long context evaluation           |
-| `longbench_gov`   | Government report summarization   |
-| `longbench_qmsum` | Meeting summarization             |
-| `loogle`          | Long document summarization       |
-| `narrativeqa`     | Story-based reading comprehension |
-| `sharegpt`        | Multi-turn conversations          |
-| `triviaqa`        | Open-domain trivia QA             |
-| `wikitext`        | Language modeling                 |
 
 ## Files
 
