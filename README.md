@@ -17,16 +17,16 @@ A scalable benchmarking framework for evaluating LLM inference performance via t
 
 ```bash
 # List available benchmarks
-python main.py --list
+python3 main.py bench --list
 
 # Run benchmarks against a vLLM endpoint
-python main.py [--endpoint URL] [--model MODEL] [--data-dir DIR] [--clients N] benchmark1 [benchmark2 ...]
+python3 main.py bench [--endpoint URL] [--model MODEL] [--data-dir DIR] [--clients N] benchmark1 [benchmark2 ...]
 
-# Run warmup plugin only
-python main.py --warmup --total-kv-tokens 8388608
+# List available plugins
+python3 main.py plugin --list
 
-# Run warmup plugin at 80% KV utilization estimate
-python main.py --warmup --total-kv-tokens 8388608 --warmup-utilization-perc 80
+# Run simulator plugin
+python3 main.py plugin simulator --total-kv-tokens 8388608
 ```
 
 ### Options
@@ -34,37 +34,49 @@ python main.py --warmup --total-kv-tokens 8388608 --warmup-utilization-perc 80
 * `--endpoint URL` — vLLM endpoint (default: `http://127.0.0.1:8080`)
 * `--model MODEL` — Model name (auto-detected from endpoint if omitted)
 * `--data-dir DIR` — Dataset cache directory (default: `./data`)
-* `--stop-after N` — Stop after processing N entries (for quick testing; default: 0, meaning no limit)
+
+Bench command options (`python3 main.py bench ...`):
+* `--list` — List available benchmarks
+* `--stop-after N` — Stop after processing N entries (for quick testing; default: `0` means no limit)
 * `--clients N` — Number of concurrent client workers (default: `1`)
 * `--truncate` - Truncate input requests based on the maximum model len
-* `--warmup` — Run warmup plugin before benchmarks (or standalone)
-* `--total-kv-tokens N` — Total KV cache tokens (required with `--warmup`)
-* `--warmup-utilization-perc N` — Use N% of total KV tokens for warmup estimate (default: `100`)
-* Warmup estimates concurrency from `max_model_len` and KV token budget (no metrics polling)
+
+Plugin command options (`python3 main.py plugin ...`):
+* `--list` — List available plugins
+* `PLUGIN_NAME` — Plugin to run (currently: `simulator`)
+* `--total-kv-tokens N` — Total KV cache tokens (required for `simulator`)
+* `--prefix-length-perc N` — Shared prefix % per prompt (default: `70`)
+* `--n-runs N` — Number of simulation runs (default: `1`)
+* `--source-type` — `wikitext | squad | wikipedia` (default: `wikitext`)
+* `--task` — `summarize | qa | chat | explain | continue` (default: random)
+* `--utilization-perc N` — Target utilization of total KV tokens (default: `100`)
+* `--request-interval-s` — Delay between requests (default: `1.0`)
+* `--run-interval-s` — Delay between runs (default: `2.0`)
+* `--request-timeout-s` — HTTP timeout per request (default: `10.0`)
 
 ### Examples
 
 ```bash
 # Run with defaults (localhost:8080, auto-detect model)
-python main.py narrativeqa humaneval
+python3 main.py bench narrativeqa humaneval
 
 # Specify endpoint and model
-python main.py --endpoint http://127.0.0.1:8080 --model facebook/opt-125m alpaca triviaqa
+python3 main.py bench --endpoint http://127.0.0.1:8080 --model facebook/opt-125m alpaca triviaqa
 
 # Custom data directory
-python main.py --data-dir /tmp/datasets narrativeqa
+python3 main.py bench --data-dir /tmp/datasets narrativeqa
 
 # Run with 10 concurrent clients
-python main.py --clients 10 narrativeqa
+python3 main.py bench --clients 10 narrativeqa
 
-# Warmup then run benchmarks
-python main.py --warmup --total-kv-tokens 8388608 narrativeqa
+# List plugins
+python3 main.py plugin --list
 
-# Warmup only
-python main.py --warmup --total-kv-tokens 8388608
+# Simulator plugin
+python3 main.py plugin simulator --total-kv-tokens 8388608
 
-# Warmup at 90% utilization estimate
-python main.py --warmup --total-kv-tokens 8388608 --warmup-utilization-perc 90
+# Simulator plugin with task/source tuning
+python3 main.py plugin simulator --total-kv-tokens 8388608 --source-type squad --task qa --utilization-perc 90
 ```
 
 ## Files

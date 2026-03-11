@@ -4,13 +4,16 @@
 VLMBench Coordinator
 
 Usage:
-  ./main.py --list
-  ./main.py [--endpoint URL] [--model MODEL] [--data-dir DIR] benchmark1 [benchmark2 ...]
+    ./main.py bench --list
+    ./main.py bench [--endpoint URL] [--model MODEL] [--data-dir DIR] benchmark1 [benchmark2 ...]
+    ./main.py plugin --list
+    ./main.py plugin simulator --total-kv-tokens N
 
 Examples:
-  ./main.py --list
-  ./main.py narrativeqa humaneval
-  ./main.py --endpoint http://127.0.0.1:8080 --model facebook/opt-125m alpaca triviaqa
+    ./main.py bench --list
+    ./main.py bench narrativeqa humaneval
+    ./main.py plugin --list
+    ./main.py plugin simulator --total-kv-tokens 8388608
 
 @authors:
     - Alexander "Sasha" Joukov (alexander.joukov@stonybrook.edu)
@@ -27,12 +30,15 @@ import sys
 from typing import Any, Dict
 import time
 
-from benchmarks import REGISTRY, list_all
+from benchmarks import REGISTRY as BENCHMARK_REGISTRY
+from benchmarks import list_all as list_benchmarks
+from plugins import REGISTRY as PLUGIN_REGISTRY
+from plugins import list_all as list_plugins
+from plugins.simulator.text_sources import TaskType
 from src import Benchmark
 from src.utils import assert_server_up, detect_max_model_len, detect_model, truncate_payload
 from src.worker import Worker, WorkerStats
 from src.vars import init_vars
-from plugins.simulator.simulator import simulate
 
 
 def run_benchmark(
@@ -156,157 +162,274 @@ def main():
     ap = argparse.ArgumentParser(
         description="VLMBench — connects to a running vLLM instance"
     )
-    ap.add_argument(
-        "--list", action="store_true", help="List available benchmarks and exit"
-    )
-    ap.add_argument(
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument(
         "--endpoint",
         default=vars["DEFAULT_ENDPOINT"],
         help=f"vLLM endpoint URL (default: {vars['DEFAULT_ENDPOINT']})",
     )
-    ap.add_argument(
+    common.add_argument(
         "--model",
         default=None,
         help="Model name (auto-detected from endpoint if omitted)",
     )
-    ap.add_argument(
+    common.add_argument(
         "--data-dir",
         default=vars["DEFAULT_DATA_DIR"],
         help=f"Dataset cache directory (default: {vars['DEFAULT_DATA_DIR']})",
     )
-    ap.add_argument(
+
+    subparsers = ap.add_subparsers(dest="command")
+
+    bench_parser = subparsers.add_parser(
+        "bench",
+        parents=[common],
+        help="Run benchmarks",
+        description="Run benchmark workloads against a vLLM endpoint",
+    )
+    bench_parser.add_argument(
+        "--list", action="store_true", help="List available benchmarks and exit"
+    )
+    bench_parser.add_argument(
         "--stop-after",
         type=int,
         default=0,
         help="Stop after processing this many entries (for quick testing; default: 0, meaning no limit)",
     )
-    ap.add_argument(
+    bench_parser.add_argument(
         "--truncate",
         action="store_true",
         help="Truncate inputs that exceed the model's context window",
     )
-    ap.add_argument(
+    bench_parser.add_argument(
         "--clients",
         type=int,
         default=1,
         help="Number of concurrent client workers (default: 1)",
     )
-    ap.add_argument(
-        "--simulate",
-        action="store_true",
-        help="Run simulation instead of actual benchmarks",
-    )
-    ap.add_argument(
-        "--total-kv-tokens",
-        type=int,
-        default=0,
-        help="Total KV cache tokens (required with --simulate)",
-    )
-    ap.add_argument(
+    bench_parser.add_argument(
         "benchmarks",
         nargs="*",
         help="Benchmark names to run",
     )
 
+    plugin_parser = subparsers.add_parser(
+        "plugin",
+        parents=[common],
+        help="Run plugins",
+        description="Run plugin workloads against a vLLM endpoint",
+    )
+    plugin_parser.add_argument(
+        "--list", action="store_true", help="List available plugins and exit"
+    )
+    plugin_parser.add_argument(
+        "plugin_name",
+        nargs="?",
+        help="Plugin name to run",
+    )
+    plugin_parser.add_argument(
+        "--total-kv-tokens",
+        type=int,
+        default=0,
+        help="Total KV cache tokens (required for plugin 'simulator')",
+    )
+    plugin_parser.add_argument(
+        "--prefix-length-perc",
+        type=float,
+        default=70.0,
+        help="Shared prefix percentage for simulator requests (default: 70)",
+    )
+    plugin_parser.add_argument(
+        "--n-runs",
+        type=int,
+        default=1,
+        help="Number of simulation runs (default: 1)",
+    )
+    plugin_parser.add_argument(
+        "--source-type",
+        default="wikitext",
+        help="Text source: wikitext | squad | wikipedia (default: wikitext)",
+    )
+    plugin_parser.add_argument(
+        "--task",
+        default=None,
+        choices=[t.value for t in TaskType],
+        help="Task type for simulator requests (default: random)",
+    )
+    plugin_parser.add_argument(
+        "--utilization-perc",
+        type=float,
+        default=100.0,
+        help="Percent of total KV tokens to target (default: 100)",
+    )
+    plugin_parser.add_argument(
+        "--request-interval-s",
+        type=float,
+        default=1.0,
+        help="Seconds to wait between requests (default: 1.0)",
+    )
+    plugin_parser.add_argument(
+        "--run-interval-s",
+        type=float,
+        default=2.0,
+        help="Seconds to wait between runs (default: 2.0)",
+    )
+    plugin_parser.add_argument(
+        "--request-timeout-s",
+        type=float,
+        default=10.0,
+        help="HTTP timeout per request in seconds (default: 10.0)",
+    )
+
     # Parse arguments
     args = ap.parse_args()
 
-    # Handle --list
-    if args.list:
-        print("Available benchmarks:")
-        for name in list_all():
-            print(f"  {name}")
-        return
-
-    if not args.benchmarks and not args.simulate:
+    if args.command is None:
         ap.print_usage()
-        print(
-            "Error: specify at least one benchmark, or use --simulate (or use --list).",
-            file=sys.stderr,
-        )
+        print("Error: choose a command: 'bench' or 'plugin'.", file=sys.stderr)
         sys.exit(2)
 
-    if args.clients < 1:
-        print("Error: --clients must be >= 1.", file=sys.stderr)
-        sys.exit(2)
+    if args.command == "bench":
+        if args.list:
+            print("Available benchmarks:")
+            for name in list_benchmarks():
+                print(f"  {name}")
+            return
 
-    if args.simulate and args.total_kv_tokens <= 0:
-        print("Error: --total-kv-tokens must be > 0 when --simulate is set.", file=sys.stderr)
-        sys.exit(2)
-
-    # Validate benchmark names
-    for name in args.benchmarks:
-        if name not in REGISTRY:
-            print(f"Error: Unknown benchmark '{name}'.", file=sys.stderr)
-            print(f"Available: {list_all()}", file=sys.stderr)
+        if not args.benchmarks:
+            bench_parser.print_usage()
+            print(
+                "Error: specify at least one benchmark (or use --list).",
+                file=sys.stderr,
+            )
             sys.exit(2)
 
-    endpoint = args.endpoint
-    data_dir = os.environ.get("HF_HOME") or args.data_dir
+        if args.clients < 1:
+            print("Error: --clients must be >= 1.", file=sys.stderr)
+            sys.exit(2)
 
-    # Check server
-    print(f"Checking server at {endpoint} ...")
-    try:
-        assert_server_up(endpoint)
-    except Exception as e:
-        print(f"Error: Cannot reach vLLM at {endpoint}: {e}", file=sys.stderr)
-        sys.exit(1)
-    print("Server is up.")
+        for name in args.benchmarks:
+            if name not in BENCHMARK_REGISTRY:
+                print(f"Error: Unknown benchmark '{name}'.", file=sys.stderr)
+                print(f"Available: {list_benchmarks()}", file=sys.stderr)
+                sys.exit(2)
 
-    # Detect or use provided model
-    model = args.model or detect_model(endpoint)
-    print(f"Model: {model}")
+        endpoint = args.endpoint
+        data_dir = os.environ.get("HF_HOME") or args.data_dir
 
-    max_model_len = 0
-    if args.truncate or args.simulate:
-        max_model_len = detect_max_model_len(endpoint)
+        print(f"Checking server at {endpoint} ...")
+        try:
+            assert_server_up(endpoint)
+        except Exception as e:
+            print(f"Error: Cannot reach vLLM at {endpoint}: {e}", file=sys.stderr)
+            sys.exit(1)
+        print("Server is up.")
+
+        model = args.model or detect_model(endpoint)
+        print(f"Model: {model}")
+
+        max_model_len = 0
         if args.truncate:
+            max_model_len = detect_max_model_len(endpoint)
             print(f"Max model length: {max_model_len} (truncation enabled)")
-        else:
-            print(f"Max model length: {max_model_len}")
 
-    if args.simulate:
-        simulate(
-            endpoint=endpoint,
-            model=model,
-            max_model_len=max_model_len,
-            total_kv_tokens=args.total_kv_tokens,
-            prefix_length_perc=70,
-            utilization_perc=100,
-            cache_dir=data_dir,
+        os.makedirs(data_dir, exist_ok=True)
+
+        total_n = 0
+        total_ok = 0
+        total_fail = 0
+
+        print(f"\n=== Running {len(args.benchmarks)} benchmark(s) sequentially with {args.clients} client(s) each ===")
+        for name in args.benchmarks:
+            bench_cls = BENCHMARK_REGISTRY[name]
+            benchmark = bench_cls.create(model=model, cache_dir=data_dir)
+
+            n, ok, fail = run_benchmark(
+                vars,
+                name,
+                benchmark,
+                endpoint,
+                clients=args.clients,
+                stop_after=args.stop_after,
+                truncate=args.truncate,
+                max_model_len=max_model_len,
+            )
+
+            total_n += n
+            total_ok += ok
+            total_fail += fail
+
+        print(
+            f"\n=== All done: {total_n} total requests, {total_ok} ok, {total_fail} failed ==="
         )
-
-    if not args.benchmarks:
-        print("No benchmarks requested; exiting after simulation.")
+        print(f"End time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
         return
 
-    os.makedirs(data_dir, exist_ok=True)
+    if args.command == "plugin":
+        if args.list:
+            print("Available plugins:")
+            for name in list_plugins():
+                print(f"  {name}")
+            return
 
-    # Run benchmarks sequentially
-    total_n = 0
-    total_ok = 0
-    total_fail = 0
+        if not args.plugin_name:
+            plugin_parser.print_usage()
+            print("Error: specify a plugin name (or use --list).", file=sys.stderr)
+            sys.exit(2)
 
-    # Note: we run benchmarks sequentially to avoid interleaving their outputs and to simplify resource management.
-    print(f"\n=== Running {len(args.benchmarks)} benchmark(s) sequentially with {args.clients} client(s) each ===")
-    for name in args.benchmarks:
-        bench_cls = REGISTRY[name]
-        benchmark = bench_cls.create(model=model, cache_dir=data_dir)
+        if args.plugin_name not in PLUGIN_REGISTRY:
+            print(f"Error: Unknown plugin '{args.plugin_name}'.", file=sys.stderr)
+            print(f"Available: {list_plugins()}", file=sys.stderr)
+            sys.exit(2)
 
-        n, ok, fail = run_benchmark(
-            vars, name, benchmark, endpoint, clients=args.clients,
-            stop_after=args.stop_after,
-            truncate=args.truncate, max_model_len=max_model_len,
-        )
+        endpoint = args.endpoint
+        data_dir = os.environ.get("HF_HOME") or args.data_dir
 
-        total_n += n
-        total_ok += ok
-        total_fail += fail
+        print(f"Checking server at {endpoint} ...")
+        try:
+            assert_server_up(endpoint)
+        except Exception as e:
+            print(f"Error: Cannot reach vLLM at {endpoint}: {e}", file=sys.stderr)
+            sys.exit(1)
+        print("Server is up.")
 
-    print(
-        f"\n=== All done: {total_n} total requests, {total_ok} ok, {total_fail} failed ==="
-    )
-    print(f"End time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        model = args.model or detect_model(endpoint)
+        print(f"Model: {model}")
+
+        max_model_len = detect_max_model_len(endpoint)
+        print(f"Max model length: {max_model_len}")
+
+        os.makedirs(data_dir, exist_ok=True)
+
+        if args.plugin_name == "simulator":
+            if args.total_kv_tokens <= 0:
+                print(
+                    "Error: --total-kv-tokens must be > 0 for plugin 'simulator'.",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
+
+            simulate_task = TaskType(args.task) if args.task else None
+            plugin_runner = PLUGIN_REGISTRY[args.plugin_name]
+            plugin_runner(
+                endpoint=endpoint,
+                model=model,
+                max_model_len=max_model_len,
+                total_kv_tokens=args.total_kv_tokens,
+                prefix_length_perc=args.prefix_length_perc,
+                n_runs=args.n_runs,
+                source_type=args.source_type,
+                task=simulate_task,
+                cache_dir=data_dir,
+                utilization_perc=args.utilization_perc,
+                request_interval_s=args.request_interval_s,
+                run_interval_s=args.run_interval_s,
+                request_timeout_s=args.request_timeout_s,
+            )
+            return
+
+        print(f"Error: Plugin '{args.plugin_name}' is registered but not dispatchable.", file=sys.stderr)
+        sys.exit(2)
 
 
 if __name__ == "__main__":
