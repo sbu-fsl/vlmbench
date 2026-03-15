@@ -120,28 +120,27 @@ def run_benchmark(
         headers = {"Content-Type": "application/json"}
 
         # count tokens
-        count, tokens = token_count(endpoint, payload.get("model"), payload.get("prompt", ""))
-        if max_model_len > 0 and count > max_model_len:
+        token_num, tokens = token_count(endpoint, payload.get("model"), payload.get("prompt", ""))
+        if max_model_len > 0 and token_num > max_model_len:
             print(
-                f"Entry {count} exceeds max model length ({count} > {max_model_len}).",
+                f"Entry {count} exceeds max model length ({token_num} > {max_model_len}).",
                 file=sys.stderr,
             )
 
         # truncate payload if needed (and if we know the model's max context length)
         if truncate and max_model_len > 0:
-            payload = truncate_payload(endpoint, payload, max_model_len, count, tokens)
+            payload = truncate_payload(endpoint, payload, max_model_len, token_num, tokens)
 
-        # each worker will process this job and update stats
-        for _ in workers:
-            print(f"Enqueuing job for entry {count} ...")
-            jobs.put(
-                {
-                    "name": name,
-                    "url": url,
-                    "headers": headers,
-                    "payload": payload,
-                }
-            )
+        # enqueue one job per entry (workers pick jobs from the shared queue)
+        print(f"Enqueuing job for entry {count} ...")
+        jobs.put(
+            {
+                "name": name,
+                "url": url,
+                "headers": headers,
+                "payload": payload,
+            }
+        )
 
     print(f"Finished enqueuing jobs for benchmark '{name}'. Total entries processed: {count}.")
     # signal workers to stop (one None per worker)
