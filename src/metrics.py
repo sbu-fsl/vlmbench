@@ -32,6 +32,7 @@ import requests
 # Prometheus metric names we care about
 _PROMPT_METRIC     = "vllm:prompt_tokens_total"
 _GENERATION_METRIC = "vllm:generation_tokens_total"
+_PREFIX_CACHED_METRIC = "vllm:prefix_cache_hits"
 
 # Line format:  metric_name{labels} value [timestamp]
 _SAMPLE_RE = re.compile(
@@ -46,7 +47,7 @@ class MetricsSnapshot:
     """Cumulative counter values at a single point in time."""
     prompt_tokens_total:     float
     generation_tokens_total: float
-
+    prefix_cache_hits:       float
     def delta(self, earlier: "MetricsSnapshot") -> dict:
         """
         Return per-request token counts relative to an *earlier* snapshot.
@@ -54,10 +55,12 @@ class MetricsSnapshot:
         Keys:
             prefill_tokens  – tokens that actually ran through prefill
             decode_tokens   – tokens generated during decode
+            cached_tokens   – tokens that were cached
         """
         return {
             "prefill_tokens": max(0, self.prompt_tokens_total     - earlier.prompt_tokens_total),
             "decode_tokens":  max(0, self.generation_tokens_total - earlier.generation_tokens_total),
+            "cached_tokens":  max(0, self.prefix_cache_hits - earlier.prefix_cache_hits),
         }
 
 
@@ -93,10 +96,11 @@ def fetch_snapshot(base_url: str, timeout: float = 5.0) -> Optional[MetricsSnaps
         return None
 
     counters = _parse_counters(resp.text)
-    if _PROMPT_METRIC not in counters or _GENERATION_METRIC not in counters:
+    if _PROMPT_METRIC not in counters or _GENERATION_METRIC not in counters or _PREFIX_CACHED_METRIC not in counters:
         return None
 
     return MetricsSnapshot(
         prompt_tokens_total=counters[_PROMPT_METRIC],
         generation_tokens_total=counters[_GENERATION_METRIC],
+        prefix_cache_hits=counters[_PREFIX_CACHED_METRIC],
     )
