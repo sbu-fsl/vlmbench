@@ -315,6 +315,10 @@ class Worker(threading.Thread):
                 timeout=self._rto,
             )
 
+            # dump the response in pretty format for debugging
+            print(f"Response from {name} ({self.name}): {response.status_code}\n{json.dumps(response.json(), indent=2)}"
+            )
+
             # snapshot metrics AFTER the request
             snap_after = (
                 fetch_snapshot(self._metrics_base_url)
