@@ -117,7 +117,7 @@ def _render_messages(messages: List[Dict]) -> str:
     )
 
 
-def token_count(
+def _token_count(
     endpoint: str, model: str, payload: Dict, timeout_s: float = 10.0
 ) -> Tuple[int, List[int]]:
     """Get token count for a given prompt and model.
@@ -243,7 +243,7 @@ def _truncate_messages(
     """
 
     while msgs:
-        count, _ = token_count(
+        count, _ = _token_count(
             endpoint,
             model,
             {"messages": msgs},
@@ -267,8 +267,6 @@ def truncate_payload(
     model: str,
     payload: dict,
     max_model_len: int,
-    count: int,
-    tokens: List[int],
     timeout_s: float = 10.0,
 ) -> Dict:
     """Truncate the input prompt in the payload if the token count exceeds the model's max_model_len.
@@ -283,10 +281,6 @@ def truncate_payload(
         The original payload to be sent to the model server.
     max_model_len : int
         The maximum token length supported by the model.
-    count : int
-        The token count of the input prompt.
-    tokens : list[int]
-        The list of token IDs for the input prompt.
     timeout_s : float, optional
         The timeout in seconds for the detokenize request (default is 10.0).
 
@@ -307,6 +301,14 @@ def truncate_payload(
 
     # calculate the limit
     limit = max_model_len - generation_tokens - 32
+
+    # get the token count for the input prompt
+    count, tokens = _token_count(
+        endpoint,
+        model,
+        payload,
+        timeout_s,
+    )
     if count <= limit:
         return payload
 
