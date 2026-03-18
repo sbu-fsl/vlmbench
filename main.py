@@ -25,6 +25,7 @@ def _run_benchmark(
     clients: int,
     truncate: bool = False,
     max_model_len: int = 0,
+    enable_metrics: bool = False,
 ):
     """Run a single benchmark: iterate its entries, send HTTP requests, and print the status code for each.
 
@@ -44,6 +45,8 @@ def _run_benchmark(
         Whether to truncate inputs that exceed the model's context window (default: False).
     max_model_len : int, optional
         Maximum model context length (required if truncate is True; default: 0).
+    enable_metrics : bool, optional
+        Whether to enable metrics collection (fetches cumulative counter values from /metrics endpoint before and after benchmarks, and prints the differences; default: False).
     """
 
     print(f"\n=== Benchmark: {name} ===")
@@ -60,6 +63,7 @@ def _run_benchmark(
             jobs=jobs,
             stats=stats,
             request_timeout=vars["REQUEST_TIMEOUT"],
+            enable_metrics=enable_metrics,
         )
         for index in range(max(1, clients))
     ]
@@ -314,6 +318,7 @@ def main():
                 clients=args.clients,
                 truncate=args.truncate,
                 max_model_len=max_model_len,
+                enable_metrics=args.enable_metrics,
             )
 
             total_n += n
