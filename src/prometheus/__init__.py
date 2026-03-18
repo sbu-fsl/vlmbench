@@ -135,7 +135,8 @@ def fetch_snapshot(base_url: str, timeout: float = 5.0) -> Optional[MetricsSnaps
     try:
         resp = requests.get(url, timeout=timeout)
         resp.raise_for_status()
-    except Exception:
+    except Exception as e:
+        print(f"[METRICS] Failed to fetch metrics from {url}: {e}")
         return None
 
     counters = _parse_counters(resp.text)
