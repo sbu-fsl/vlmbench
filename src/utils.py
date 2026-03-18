@@ -149,6 +149,8 @@ def detect_max_model_len(endpoint: str, model: str, timeout_s: float = 10.0) -> 
     raise RuntimeError(f"Model '{model}' not found at endpoint.")
 
 
+# TODO: Fix messages and prompt handling in token_count and truncate_payload to work correctly with both chat and non-chat models, by always using the same prompt format
+# (e.g. concatenating messages into a single prompt string) for token counting and truncation.
 def token_count(
     endpoint: str, model: str, payload: Dict, timeout_s: float = 10.0
 ) -> Tuple[int, List[int]]:

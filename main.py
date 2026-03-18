@@ -10,16 +10,10 @@ from benchmarks import list_all as list_benchmarks
 from plugins import list_all as list_plugins
 from plugins import register_subcommands
 from src import Benchmark
-from src.utils import (
-    assert_server_up,
-    auto_detect_model,
-    detect_max_model_len,
-    token_count,
-    truncate_payload,
-)
-from src.vars import init_vars
-from src.runner.stats import RunnerStats
 from src.runner.runner import Runner
+from src.runner.stats import RunnerStats
+from src.utils import assert_server_up, auto_detect_model, detect_max_model_len
+from src.vars import init_vars
 
 
 def run_benchmark(
@@ -28,13 +22,10 @@ def run_benchmark(
     benchmark: Benchmark,
     endpoint: str,
     clients: int,
-    stop_after: int = 0,
     truncate: bool = False,
     max_model_len: int = 0,
 ):
-    """
-    Run a single benchmark: iterate its entries, send HTTP requests,
-    and print the status code for each.
+    """Run a single benchmark: iterate its entries, send HTTP requests, and print the status code for each.
 
     Parameters
     ----------
@@ -48,8 +39,6 @@ def run_benchmark(
         vLLM endpoint URL.
     clients : int
         Number of concurrent client workers to use.
-    stop_after : int, optional
-        Stop after processing this many entries (for quick testing; default: 0, meaning no limit).
     truncate : bool, optional
         Whether to truncate inputs that exceed the model's context window (default: False).
     max_model_len : int, optional
@@ -57,14 +46,14 @@ def run_benchmark(
     """
 
     print(f"\n=== Benchmark: {name} ===")
-    print(f"Start time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"--- Start time: {time.strftime('%Y-%m-%d %H:%M:%S')} ---")
 
     # shared queue for jobs and stats collector
     jobs: "queue.Queue[Dict[str, Any] | None]" = queue.Queue()
     stats = RunnerStats()
 
-    # create worker threads
-    workers = [
+    # create runner threads
+    runners = [
         Runner(
             runner_id=index + 1,
             jobs=jobs,
@@ -74,46 +63,24 @@ def run_benchmark(
         for index in range(max(1, clients))
     ]
 
-    # start workers
-    for worker in workers:
-        worker.start()
+    # start runners
+    for r in runners:
+        r.start()
 
     # iterate benchmark entries and enqueue jobs
-    count = 0
     for result in benchmark.run():
-        count += 1
-        if stop_after > 0 and count > stop_after:
-            break
-
         uri = result["uri"]
         payload = result["payload"]
 
         # skip entries with empty prompts (filtered by build_input)
         if not payload.get("prompt") and not payload.get("messages"):
-            count -= 1
             continue
 
         url = f"{endpoint.rstrip('/')}/v1{uri}"
         headers = {"Content-Type": "application/json"}
 
-        # count tokens
-        token_num, tokens = token_count(
-            endpoint, payload.get("model"), payload.get("prompt", "")
-        )
-        if max_model_len > 0 and token_num > max_model_len:
-            print(
-                f"Entry {count} exceeds max model length ({token_num} > {max_model_len}).",
-                file=sys.stderr,
-            )
-
-        # truncate payload if needed (and if we know the model's max context length)
-        if truncate and max_model_len > 0:
-            payload = truncate_payload(
-                endpoint, payload, max_model_len, token_num, tokens
-            )
-
-        # enqueue one job per entry (workers pick jobs from the shared queue)
-        for _ in workers:
+        # enqueue one job per entry (runners pick jobs from the shared queue)
+        for _ in clients:
             jobs.put(
                 {
                     "name": name,
@@ -123,34 +90,51 @@ def run_benchmark(
                 }
             )
 
-    # signal workers to stop (one None per worker)
-    for _ in workers:
+    # signal runners to stop (one None per runner)
+    for _ in runners:
         jobs.put(None)
 
     # wait for all jobs to be processed
     jobs.join()
 
-    # wait for all workers to finish
-    for worker in workers:
-        worker.join()
+    # wait for all runners to finish
+    for r in runners:
+        r.join()
 
     # print summary
     summary = stats.stats()
     n = summary["total_requests"]
     ok = summary["success"]
-    fail = summary["http_error"] + summary["timeout"] + summary["exception"]
+    fail = summary["error"] + summary["timeout"]
+    total_request_bytes = summary["total_request_bytes"]
+    total_response_bytes = summary["total_response_bytes"]
+    average_latency = summary["avg_latency_ms"]
+    p95_latency = summary["p95_latency_ms"]
 
     print(f"--- {name}: {n} requests, {ok} ok, {fail} failed ---")
-    print(
-        f"    tokens: "
-        f"submitted={summary['total_submitted_tokens']} "
-        f"prefill={summary['total_prefill_tokens']} "
-        f"decode={summary['total_decode_tokens']} "
-        f"cached={summary['total_cached_tokens']}"
-    )
-    print(f"End time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Total request bytes: {total_request_bytes}")
+    print(f"Total response bytes: {total_response_bytes}")
+    print(f"Average latency: {average_latency:.2f} ms")
+    print(f"95th percentile latency: {p95_latency:.2f} ms")
+    print(f"--- End time: {time.strftime('%Y-%m-%d %H:%M:%S')} ---")
 
     return n, ok, fail
+
+
+def _list_benchmarks() -> None:
+    """Helper function to list benchmarks and exit (used for --list)."""
+
+    print("Available benchmarks:")
+    for name in list_benchmarks():
+        print(f"  {name}")
+
+
+def _list_plugins() -> None:
+    """Helper function to list plugins and exit (used for --list)."""
+
+    print("Available plugins:")
+    for name in list_plugins():
+        print(f"  {name}")
 
 
 def main():
@@ -240,12 +224,12 @@ def main():
 
     # handle "bench" and "plugin" commands
     if args.command == "bench":
+        # if --list is specified, list benchmarks and exit
         if args.list:
-            print("Available benchmarks:")
-            for name in list_benchmarks():
-                print(f"  {name}")
+            _list_benchmarks()
             return
 
+        # if no benchmarks are specified, show usage and exit
         if not args.benchmarks:
             bench_parser.print_usage()
             print(
@@ -254,10 +238,12 @@ def main():
             )
             raise RuntimeError("No benchmarks specified")
 
+        # check that clients is a positive integer
         if args.clients < 1:
             print("Error: --clients must be >= 1.", file=sys.stderr)
             raise RuntimeError("Invalid number of clients")
 
+        # check that specified benchmarks exist
         for name in args.benchmarks:
             if name not in BENCHMARK_REGISTRY:
                 print(f"Error: Unknown benchmark '{name}'.", file=sys.stderr)
@@ -267,22 +253,26 @@ def main():
         endpoint = args.endpoint
         data_dir = os.environ.get("HF_HOME") or args.data_dir
 
-        print(f"Checking server at {endpoint} ...")
+        # check server and detect model info before running benchmarks
         try:
+            print(f"Checking server at {endpoint} ...")
             assert_server_up(endpoint)
         except Exception as e:
             print(f"Error: Cannot reach vLLM at {endpoint}: {e}", file=sys.stderr)
             raise RuntimeError(f"Cannot reach server at {endpoint}: {e}")
         print("Server is up.")
 
+        # detect model name from endpoint if not provided (for better stats reporting and caching)
         model = args.model or auto_detect_model(endpoint)
         print(f"Model: {model}")
 
+        # resolve max model length if truncation is needed (some benchmarks may require this)
         max_model_len = 0
         if args.truncate:
             max_model_len = detect_max_model_len(endpoint)
             print(f"Max model length: {max_model_len} (truncation enabled)")
 
+        # ensure data directory exists for caching benchmark datasets
         os.makedirs(data_dir, exist_ok=True)
 
         total_n = 0
@@ -292,9 +282,13 @@ def main():
         print(
             f"\n=== Running {len(args.benchmarks)} benchmark(s) sequentially with {args.clients} client(s) each ==="
         )
+
         for name in args.benchmarks:
             bench_cls = BENCHMARK_REGISTRY[name]
+
+            # create benchmark instance
             benchmark = bench_cls.create(model=model, cache_dir=data_dir)
+            benchmark.set_limit(args.stop_after)
 
             # run benchmark and accumulate stats
             n, ok, fail = run_benchmark(
@@ -303,7 +297,6 @@ def main():
                 benchmark,
                 endpoint,
                 clients=args.clients,
-                stop_after=args.stop_after,
                 truncate=args.truncate,
                 max_model_len=max_model_len,
             )
@@ -316,15 +309,12 @@ def main():
             f"\n=== All done: {total_n} total requests, {total_ok} ok, {total_fail} failed ==="
         )
 
-        print(f"End time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-
         return
 
     if args.command == "plugin":
+        # if --list is specified, list plugins and exit
         if args.list:
-            print("Available plugins:")
-            for name in list_plugins():
-                print(f"  {name}")
+            _list_plugins()
             return
 
         # for plugins, we expect each plugin's subparser to set a "plugin_runner" attribute on args,
@@ -334,6 +324,7 @@ def main():
             print("Error: specify a plugin name (or use --list).", file=sys.stderr)
             raise RuntimeError("No plugin specified")
 
+        # check that the specified plugin exists and has a runner function
         if not hasattr(args, "plugin_runner"):
             print(
                 f"Error: Plugin '{args.plugin_name}' has no runnable handler.",
@@ -344,30 +335,33 @@ def main():
         endpoint = args.endpoint
         data_dir = os.environ.get("HF_HOME") or args.data_dir
 
-        # check server and detect model info before running plugin
-        print(f"Checking server at {endpoint} ...")
+        # check server and detect model info before running plugin workloads
         try:
+            print(f"Checking server at {endpoint} ...")
             assert_server_up(endpoint)
         except Exception as e:
             print(f"Error: Cannot reach vLLM at {endpoint}: {e}", file=sys.stderr)
             raise RuntimeError(f"Cannot reach server at {endpoint}: {e}")
         print("Server is up.")
 
-        # reverse compatibility: if --model is not provided, try to auto-detect it from the endpoint
-        resolved_model = args.model or auto_detect_model(endpoint)
-        print(f"Model: {resolved_model}")
+        # detect model name from endpoint if not provided (for better stats reporting and caching)
+        model = args.model or auto_detect_model(endpoint)
+        print(f"Model: {model}")
 
-        # resolve max model length if truncation is needed (some plugins may require this)
+        # resolve max model length
         max_model_len = detect_max_model_len(endpoint)
         print(f"Max model length: {max_model_len}")
 
+        # ensure data directory exists for caching benchmark datasets
         os.makedirs(data_dir, exist_ok=True)
 
         args.cache_dir = data_dir
-        args.resolved_model = resolved_model
+        args.resolved_model = model
         args.max_model_len = max_model_len
 
+        # run the plugin's workload function, which should handle everything internally (including printing its own status and results)
         args.plugin_runner(args)
+
         return
 
 

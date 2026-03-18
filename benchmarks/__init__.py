@@ -1,11 +1,14 @@
 """Benchmark registry."""
 
+from typing import Dict
+
+from src.benchmark import Benchmark
+
 from .alpaca import LocalAlpacaBenchmark
 from .longbench_qmsum import LocalLongBenchQMSumBenchmark
 from .narrativeqa import LocalNarrativeQABenchmark
 from .sharegpt import LocalShareGPTBenchmark
 from .wmt16 import WMT16Benchmark
-
 
 # from .alpaca import AlpacaBenchmark
 # from .longbench_qmsum import LongBenchQMSumBenchmark
@@ -19,7 +22,7 @@ from .wmt16 import WMT16Benchmark
 # from .triviaqa import TriviaQABenchmark
 # from .wikitext import WikitextBenchmark
 
-REGISTRY = {
+REGISTRY: Dict[str, Benchmark] = {
     # "alpaca": AlpacaBenchmark,
     # "triviaqa": TriviaQABenchmark,
     # "narrativeqa": NarrativeQABenchmark,
@@ -39,6 +42,6 @@ REGISTRY = {
 }
 
 
-def list_all():
+def list_all() -> Dict[str, Benchmark]:
     """Return list of all registered benchmark names."""
     return sorted(REGISTRY.keys())
