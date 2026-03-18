@@ -16,11 +16,11 @@ class Runner(threading.Thread):
     def __init__(
         self,
         runner_id: int,
+        endpoint: str,
         jobs: "queue.Queue[Optional[Dict[str, Any]]]",
         stats: RunnerStats,
         request_timeout: int,
         enable_metrics: bool = False,
-        metrics_endpoint: str = "",
     ):
         """Initialize the Runner thread.
 
@@ -28,6 +28,8 @@ class Runner(threading.Thread):
         ----------
         runner_id : int
             A unique identifier for this runner thread.
+        endpoint : str
+            The base URL of the VLLM server to which the runner will send requests.
         jobs : queue.Queue[Optional[Dict[str, Any]]]
             A thread-safe queue from which the runner will consume jobs.
         stats : RunnerStats
@@ -36,18 +38,16 @@ class Runner(threading.Thread):
             The timeout in seconds for each request sent by the runner.
         enable_metrics : bool, optional
             Whether to enable metrics collection from the /metrics endpoint (default is False).
-        metrics_endpoint : str, optional
-            The base URL of the VLLM server for fetching metrics (required if enable_metrics is True; default is an empty string).
         """
 
         super().__init__(name=f"runner-{runner_id}", daemon=True)
 
         self._runner_id = runner_id
+        self._endpoint = endpoint
         self._rto = request_timeout
         self._jobs = jobs
         self._stats = stats
         self._enable_metrics = enable_metrics
-        self._metrics_endpoint = metrics_endpoint
     
     def id(self) -> int:
         """Get the unique identifier of this runner.
@@ -117,9 +117,7 @@ class Runner(threading.Thread):
 
         try:
             if self._enable_metrics:
-                print(f"[METRICS] Fetching pre-request metrics snapshot for {name}...")
-                pre_metrics = fetch_snapshot(base_url=self._metrics_endpoint, timeout=self._rto)
-                print(f"[METRICS] Pre-request metrics snapshot for {name}: {pre_metrics}")
+                pre_metrics = fetch_snapshot(base_url=self._endpoint, timeout=self._rto)
 
             # send the request
             response = requests.post(
@@ -130,9 +128,7 @@ class Runner(threading.Thread):
             )
 
             if self._enable_metrics and pre_metrics:
-                print(f"[METRICS] Fetching post-request metrics snapshot for {name}...")
-                post_metrics = fetch_snapshot(base_url=self._metrics_endpoint, timeout=self._rto)
-                print(f"[METRICS] Post-request metrics snapshot for {name}: {post_metrics}")
+                post_metrics = fetch_snapshot(base_url=self._endpoint, timeout=self._rto)
 
             # calculate latency in milliseconds
             latency = (time.perf_counter() - start) * 1000
@@ -166,9 +162,9 @@ class Runner(threading.Thread):
 
         # calculate and print the differences in metrics values before and after the request
         if self._enable_metrics and pre_metrics and post_metrics:
-            print(f"[METRICS] Metrics differences for {name}:")
             values = post_metrics.delta(pre_metrics)
             metrics_str = " ".join(
                 f"{metric}={value:.2f}" for metric, value in values.items()
             )
+
             print(f"{metrics_str}")
