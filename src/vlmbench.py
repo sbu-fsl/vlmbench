@@ -12,7 +12,7 @@ from src import Benchmark
 from src.runner import Runner, RunnerStats
 from src.tokens import truncate_payload
 from src.utils import assert_server_up, auto_detect_model, detect_max_model_len
-from src.vars import init_vars
+from src.utils.vars import init_vars
 
 
 class VLMBench:

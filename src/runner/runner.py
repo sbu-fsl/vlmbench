@@ -11,7 +11,7 @@ from src.runner.stats import RunnerStats
 
 
 class Runner(threading.Thread):
-    """Runner thread that processes jobs from a shared queue, send requests and records statistics."""
+    """Runner thread processes jobs from a shared queue, send requests and records statistics."""
 
     def __init__(
         self,
@@ -87,6 +87,8 @@ class Runner(threading.Thread):
                     headers=job["headers"],
                     payload=job["payload"],
                 )
+            except Exception as e:
+                print(e)
             finally:
                 self._jobs.task_done()
 
@@ -96,10 +98,8 @@ class Runner(threading.Thread):
         url: str,
         headers: Dict[str, str],
         payload: Any,
-    ):
-        """Process a single job.
-
-        Sending a request to the specified URL with the given headers and payload, and recording the relevant statistics.
+    ) -> None:
+        """Sending a request to the specified URL with the given headers and payload, and recording the relevant statistics.
 
         Parameters
         ----------
@@ -111,6 +111,11 @@ class Runner(threading.Thread):
             A dictionary of HTTP headers to include in the request.
         payload : Any
             The body of the request, which will be JSON-encoded before sending.
+
+        Raises
+        ------
+        RuntimeError
+            If an unexpected error happens when sending the HTTP request.
         """
 
         # calculate request size in bytes
@@ -121,12 +126,12 @@ class Runner(threading.Thread):
         pre_metrics: MetricsSnapshot = None
         post_metrics: MetricsSnapshot = None
 
-        # start the timer for latency measurement
-        start = time.perf_counter()
-
         try:
             if self._enable_metrics:
                 pre_metrics = fetch_snapshot(base_url=self._endpoint, timeout=self._rto)
+
+            # start the timer for latency measurement
+            start = time.perf_counter()
 
             # send the request
             response = requests.post(
@@ -136,13 +141,13 @@ class Runner(threading.Thread):
                 timeout=self._rto,
             )
 
+            # calculate latency in milliseconds
+            latency = (time.perf_counter() - start) * 1000
+
             if self._enable_metrics and pre_metrics:
                 post_metrics = fetch_snapshot(
                     base_url=self._endpoint, timeout=self._rto
                 )
-
-            # calculate latency in milliseconds
-            latency = (time.perf_counter() - start) * 1000
 
             status = response.status_code
             response_size = len(response.content)
@@ -162,19 +167,25 @@ class Runner(threading.Thread):
             )
 
         except requests.exceptions.Timeout:
+            # on timeout record a timeout, but do post metrics poll if enabled
             self._stats.record_timeout(request_size)
+
             print(
-                f"[TIMEOUT] {name} {self.name} request timed out after {self._rto} seconds"
+                f"[408] {name} {self.name} request timed out after {self._rto} seconds"
             )
 
+            if self._enable_metrics and pre_metrics:
+                post_metrics = fetch_snapshot(
+                    base_url=self._endpoint, timeout=self._rto
+                )
+
         except Exception as e:
-            self._stats.record_error(request_size)
-            print(f"[ERROR] {name} {self.name}: {e}")
+            raise RuntimeError(f"Error while processing an entry: {e}")
 
         # calculate and print the differences in metrics values before and after the request
         if self._enable_metrics and pre_metrics and post_metrics:
             values = post_metrics.delta(pre_metrics)
-            metrics_str = " ".join(
+            metrics_str = " , ".join(
                 f"{metric}={value:.2f}" for metric, value in values.items()
             )
 

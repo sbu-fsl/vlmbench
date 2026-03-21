@@ -4,10 +4,7 @@ from typing import Dict, Optional
 
 import requests
 
-### global variables ###
-
 _PREFIX = "vllm:"  # prefix for all metrics to avoid name collisions
-
 _METRICS = [
     "prefix_cache_queries_total",
     "prefix_cache_hits_total",
@@ -29,8 +26,7 @@ _METRICS = [
     # "request_time_per_output_token_seconds_count",
     # "request_time_per_output_token_seconds_sum",
     # "e2e_request_latency_seconds_count",
-]  # list of all metrics to fetch
-
+]
 _SAMPLE_RE = re.compile(
     r"^(?P<name>[a-zA-Z_:][a-zA-Z0-9_:]*)"
     r"(?:\{[^}]*\})?"

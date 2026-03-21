@@ -203,7 +203,9 @@ def truncate_payload(
     # extract the model
     model = payload.get("model")
     if model is None:
-        raise ValueError("Payload must include 'model' key to determine tokenization for truncation")
+        raise ValueError(
+            "Payload must include 'model' key to determine tokenization for truncation"
+        )
 
     generation_tokens = payload.get("max_tokens")
     if generation_tokens is None:
