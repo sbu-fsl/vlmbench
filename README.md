@@ -1,6 +1,6 @@
 # VLMBench
 
-VLMBench is a command-line benchmarking framework for OpenAI-compatible vLLM endpoints.
+VLMBench is a command-line benchmarking framework for OpenAI-compatible vLLM instances.
 
 It helps you run repeatable workloads, compare performance across configurations, and collect latency, throughput, and optional Prometheus metric deltas.
 
@@ -11,7 +11,7 @@ It helps you run repeatable workloads, compare performance across configurations
 
 ## What You Can Do
 
-- Run benchmark suites against a vLLM endpoint.
+- Run benchmark suites against a vLLM instance.
 - Control concurrency and request population behavior.
 - Truncate payloads to fit model context length.
 - Run plugins for readiness checks and KV-cache simulation.
