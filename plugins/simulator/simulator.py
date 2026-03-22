@@ -457,5 +457,5 @@ def run_from_args(args: argparse.Namespace) -> None:
         request_interval_s=args.request_interval_s,
         run_interval_s=args.run_interval_s,
         request_timeout_s=args.request_timeout_s,
-        enable_metrics=args.enable_metrics,
+        enable_metrics=args.enable_prometheus_metrics,
     )
