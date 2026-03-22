@@ -165,7 +165,7 @@ class VLMBench:
         """Run a benchmark."""
 
         print(f"\n=== Benchmark: {name} (metrics={enable_metrics}) ===")
-        print(f"--- start time: {time.strftime('%Y-%m-%d %H:%M:%S')} ---")
+        print(f"--- start time: {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
 
         # create a job queue
         jobs: "queue.Queue[Dict[str, Any] | None]" = queue.Queue()
