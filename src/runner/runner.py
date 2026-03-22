@@ -187,8 +187,8 @@ class Runner(threading.Thread):
             values = post_metrics.delta(pre_metrics)
             self._stats.record_vllm_metrics(values)
 
-            metrics_str = " , ".join(
-                f"{metric}={value:.2f}" for metric, value in values.items()
+            metrics_str = "\n".join(
+                f"vllm:{metric} = {value:.2f}" for metric, value in values.items()
             )
 
         # log the process
