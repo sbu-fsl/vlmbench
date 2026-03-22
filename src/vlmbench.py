@@ -387,7 +387,7 @@ class VLMBench:
                 clients=args.clients,
                 truncate=args.truncate,
                 max_model_len=max_model_len,
-                enable_metrics=args.enable_metrics,
+                enable_metrics=args.enable_prometheus_metrics,
                 random_populate=args.random_populate,
                 seed=args.seed,
                 random_batch_size=args.random_batch_size,
