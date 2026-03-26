@@ -1,4 +1,5 @@
 import os
+import random
 import sys
 import time
 from typing import List, Optional
@@ -25,7 +26,12 @@ class VLMBench:
         # build the argument parser
         self.parser = build_parser(self.vars)
 
+        # common variables
+        self._endpoint = None
+        self._data_dir = None
+
         # runners specific usage is with benchmarks
+        self._clients = 1
         self._runners = []
 
     def _list_benchmarks(self) -> None:
@@ -50,8 +56,6 @@ class VLMBench:
         self,
         name: str,
         benchmark: Benchmark,
-        endpoint: str,
-        clients: int,
         truncate: bool = False,
         max_model_len: int = 0,
         enable_metrics: bool = False,
@@ -68,17 +72,20 @@ class VLMBench:
         self._runners = [
             Runner(
                 runner_id=index + 1,
-                endpoint=endpoint,
+                endpoint=self._endpoint,
                 stats=stats,
                 request_timeout=self.vars["REQUEST_TIMEOUT"],
                 enable_metrics=enable_metrics,
             )
-            for index in range(max(1, clients))
+            for index in range(max(1, self._clients))
         ]
 
         # start each runner thread
         for runner in self._runners:
             runner.start()
+
+        # set random seed
+        random.seed(42)
 
         # call benchmark.run method to get benchmark cases sequentially
         for result in benchmark.run():
@@ -98,7 +105,7 @@ class VLMBench:
             # trucate payload if requested
             if truncate and max_model_len > 0:
                 payload = truncate_payload(
-                    endpoint=endpoint,
+                    endpoint=self._endpoint,
                     payload=payload,
                     max_model_len=max_model_len,
                     timeout_s=self.vars["REQUEST_TIMEOUT"],
@@ -106,20 +113,21 @@ class VLMBench:
 
             # build a request template
             template = {
-                "url": f"{endpoint.rstrip('/')}/v1{uri}",
+                "url": f"{self._endpoint.rstrip('/')}/v1{uri}",
                 "headers": {"Content-Type": "application/json"},
                 "payload": payload,
             }
 
-            for runner in self._runners:
-                runner.queue_job(
-                    {
-                        "name": name,
-                        "url": template["url"],
-                        "headers": template["headers"],
-                        "payload": template["payload"],
-                    }
-                )
+            # select a runner in random and queue the job
+            runner = random.choice(self._runners)
+            runner.queue_job(
+                {
+                    "name": name,
+                    "url": template["url"],
+                    "headers": template["headers"],
+                    "payload": template["payload"],
+                }
+            )
 
         # send a None job to stop runners after processing all requests
         for runner in self._runners:
@@ -172,38 +180,39 @@ class VLMBench:
 
         if args.clients < 1:
             raise RuntimeError("Invalid number of clients, --clients must be >= 1.")
+        self._clients = args.clients
 
         for name in args.benchmarks:
             if name not in BENCHMARK_REGISTRY:
                 raise RuntimeError(f"Unknown benchmark: {name}")
 
         # extract the endpoint and datasets directory
-        endpoint = args.endpoint
-        data_dir = os.environ.get("HF_HOME") or args.data_dir
+        self._endpoint = args.endpoint
+        self._data_dir = os.environ.get("HF_HOME") or args.data_dir
 
         # check if server is healthy
-        print(f"[CHECK] Checking server at {endpoint}")
+        print(f"[CHECK] Checking server at {self._endpoint}")
         try:
-            assert_server_up(endpoint)
+            assert_server_up(self._endpoint)
         except Exception as e:
-            raise RuntimeError(f"Cannot reach server at {endpoint}: {e}")
+            raise RuntimeError(f"Cannot reach server at {self._endpoint}: {e}")
         print("[CHECK] Server is up.")
 
         # detect the model
-        model = args.model or auto_detect_model(endpoint)
+        model = args.model or auto_detect_model(self._endpoint)
         print(f"[CHECK] Model: {model}")
 
         # get maximum model size (for truncation)
         max_model_len = 0
         if args.truncate:
             max_model_len = detect_max_model_len(
-                endpoint, model, timeout_s=self.vars["REQUEST_TIMEOUT"]
+                self._endpoint, model, timeout_s=self.vars["REQUEST_TIMEOUT"]
             )
             print(f"[CHECK] Max model length: {max_model_len} (truncation enabled)")
 
         # check the data directory
-        os.makedirs(data_dir, exist_ok=True)
-        print(f"[CHECK] Data directory: {data_dir}")
+        os.makedirs(self._data_dir, exist_ok=True)
+        print(f"[CHECK] Data directory: {self._data_dir}")
 
         # keep track of benchmarks status
         total_n = 0
@@ -219,14 +228,12 @@ class VLMBench:
             bench_cls = BENCHMARK_REGISTRY[name]
 
             # create the benchmark
-            benchmark = bench_cls.create(model=model, cache_dir=data_dir)
+            benchmark = bench_cls.create(model=model, cache_dir=self._data_dir)
 
             # run and update the status
             n, ok, fail = self._run_benchmark(
                 name=name,
                 benchmark=benchmark,
-                endpoint=endpoint,
-                clients=args.clients,
                 truncate=args.truncate,
                 max_model_len=max_model_len,
                 enable_metrics=args.enable_prometheus_metrics,
@@ -259,14 +266,14 @@ class VLMBench:
             raise RuntimeError("Invalid plugin specified!")
 
         # extract the datasets directory
-        data_dir = os.environ.get("HF_HOME") or args.data_dir
+        self._data_dir = os.environ.get("HF_HOME") or args.data_dir
 
         # check the data directory
-        os.makedirs(data_dir, exist_ok=True)
-        print(f"[CHECK] Data directory: {data_dir}")
+        os.makedirs(self._data_dir, exist_ok=True)
+        print(f"[CHECK] Data directory: {self._data_dir}")
 
         # set the cache directory
-        args.cache_dir = data_dir
+        args.cache_dir = self._data_dir
 
         # run the plugin
         args.plugin_runner(args)
