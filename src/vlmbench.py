@@ -1,17 +1,15 @@
-import argparse
 import os
-import queue
 import random
 import sys
 import time
 from typing import Any, Dict, Optional
 
 from benchmarks import REGISTRY as BENCHMARK_REGISTRY
-from plugins import register_subcommands
 from src import Benchmark
 from src.runner import Runner, RunnerStats
 from src.tokens import truncate_payload
 from src.utils import assert_server_up, auto_detect_model, detect_max_model_len
+from src.utils.args import build_parser
 from src.utils.vars import init_vars
 
 
@@ -24,124 +22,16 @@ class VLMBench:
         self.vars = init_vars()
         self.argv = argv if argv is not None else sys.argv[1:]
         self.args = None
-        self.parser = self._build_parser()
+
+        # build the argument parser
+        self.parser = build_parser(self.vars)
 
         # runners specific usage is with benchmarks
         self._runners = []
 
-    def _build_parser(self) -> argparse.ArgumentParser:
-        """Builds the command-line argument parser with all subcommands.
-
-        Returns
-        -------
-        ap : argparse.ArgumentParser
-            The configured argument parser for CLI.
-        """
-
-        # the root argparser
-        ap = argparse.ArgumentParser(
-            description="VLMBench - benchmarking workloads for vLLM. By File Systems & Storage Lab @ Stony Brook University (2024-2026).",
-        )
-
-        # common flags
-        common = argparse.ArgumentParser(add_help=False)
-        common.add_argument(
-            "--endpoint",
-            default=self.vars["DEFAULT_ENDPOINT"],
-            help=f"vLLM OpenAI API address (default: {self.vars['DEFAULT_ENDPOINT']})",
-        )
-        common.add_argument(
-            "--model",
-            default=None,
-            help="Model name (auto-detected from API if omitted)",
-        )
-        common.add_argument(
-            "--data-dir",
-            default=self.vars["DEFAULT_DATA_DIR"],
-            help=f"Local datasets and cache directory (default: {self.vars['DEFAULT_DATA_DIR']})",
-        )
-        common.add_argument(
-            "--enable-prometheus-metrics",
-            action="store_true",
-            help="Enable Prometheus metrics collection (fetches cumulative values from /metrics API before and after benchmarks, and shows the differences)",
-        )
-        common.add_argument(
-            "--export-output",
-            type=str,
-            default=None,
-            help="Export all benchmark results to a file (in addition to console output; specify the file path as the argument)",
-        )
-
-        # subparser groups
-        subparsers = ap.add_subparsers(dest="command")
-
-        # `bench` group
-        self._bench_parser = subparsers.add_parser(
-            "bench",
-            parents=[common],
-            help="Run benchmarks",
-            description="Run benchmark workloads against a vLLM instance using OpenAI API",
-        )
-        self._bench_parser.add_argument(
-            "--list", action="store_true", help="List available benchmarks"
-        )
-        self._bench_parser.add_argument(
-            "--stop-after",
-            type=int,
-            default=0,
-            help="Stop after processing this many entries (for limiting tests; default: 0, meaning no limit, until the dataset is over)",
-        )
-        self._bench_parser.add_argument(
-            "--truncate",
-            action="store_true",
-            help="Truncate inputs that exceed the model's context window (WARN: this might change a prompt to fit with model's context window)",
-        )
-        self._bench_parser.add_argument(
-            "--clients",
-            type=int,
-            default=1,
-            help="Number of concurrent clients (default: 1)",
-        )
-        self._bench_parser.add_argument(
-            "--random-populate",
-            action="store_true",
-            help="Populate requests by random sampling from benchmark entries",
-        )
-        self._bench_parser.add_argument(
-            "--seed",
-            type=int,
-            default=None,
-            help="Seed for random population (deterministic when used with --random-populate)",
-        )
-        self._bench_parser.add_argument(
-            "--random-batch-size",
-            type=int,
-            default=100,
-            help="Number of entries to buffer per batch in --random-populate mode (default: 100)",
-        )
-        self._bench_parser.add_argument(
-            "benchmarks",
-            nargs="*",
-            help="Benchmark names to run",
-        )
-
-        # `plugin` group
-        self._plugin_parser = subparsers.add_parser(
-            "plugin",
-            help="Run plugins",
-            description="Run plugin workloads against a vLLM instance",
-        )
-        self._plugin_parser.add_argument(
-            "--list", action="store_true", help="List available plugins"
-        )
-
-        # register plugin subcommands
-        plugin_subparsers = self._plugin_parser.add_subparsers(dest="plugin_name")
-        register_subcommands(plugin_subparsers, parents=[common])
-
-        return ap
-
     def _list_benchmarks(self) -> None:
+        """List all available benchmarks."""
+
         from benchmarks import list_all
 
         print("Available benchmarks:")
@@ -149,6 +39,8 @@ class VLMBench:
             print(f"  {name}")
 
     def _list_plugins(self) -> None:
+        """List all available plugins."""
+        
         from plugins import list_all
 
         print("Available plugins:")
@@ -173,9 +65,6 @@ class VLMBench:
         print(f"\n=== Benchmark: {name} (metrics={enable_metrics}) ===")
         print(f"--- start time: {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
 
-        # create a job queue
-        jobs: "queue.Queue[Dict[str, Any] | None]" = queue.Queue()
-
         # create a thread-safe stats keeper
         stats = RunnerStats()
 
@@ -184,7 +73,6 @@ class VLMBench:
             Runner(
                 runner_id=index + 1,
                 endpoint=endpoint,
-                jobs=jobs,
                 stats=stats,
                 request_timeout=self.vars["REQUEST_TIMEOUT"],
                 enable_metrics=enable_metrics,
@@ -206,12 +94,12 @@ class VLMBench:
 
         def _flush_random_batch(batch_templates: list[Dict[str, Any]]) -> None:
             # shuffle each client view independently while keeping batch memory bounded
-            for _ in range(clients):
+            for runner in self._runners:
                 shuffled = list(batch_templates)
                 rng.shuffle(shuffled)
 
                 for selected in shuffled:
-                    jobs.put(
+                    runner.queue_job(
                         {
                             "name": name,
                             "url": selected["url"],
@@ -262,8 +150,8 @@ class VLMBench:
                     batch_templates.clear()
             else:
                 # in normal mode, send the job to each client
-                for _ in range(clients):
-                    jobs.put(
+                for runner in self._runners:
+                    runner.queue_job(
                         {
                             "name": name,
                             "url": template["url"],
@@ -277,11 +165,8 @@ class VLMBench:
             _flush_random_batch(batch_templates)
 
         # send a None job to stop runners after processing all requests
-        for _ in self._runners:
-            jobs.put(None)
-
-        # wait for all jobs to receive
-        jobs.join()
+        for runner in self._runners:
+            runner.queue_job(None)
 
         # wait for runners
         for runner in self._runners:
@@ -449,7 +334,7 @@ class VLMBench:
         self.args = self.parser.parse_args(argv)
         if self.args.command is None:
             raise RuntimeError("No command specified")
-        
+
         # check if output export is given
         if hasattr(self.args, "export_output") and self.args.export_output:
             from src.tee import make_tee
