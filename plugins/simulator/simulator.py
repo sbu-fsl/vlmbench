@@ -1,6 +1,5 @@
 import argparse
 import math
-import queue
 import random
 import time
 from typing import Dict, Optional, Tuple
@@ -267,14 +266,12 @@ def run_simulator(
             )
             client_suffixes[client_id] = client_pair.suffix
 
-    # reuse the common request execution path used by benchmarks.
-    jobs: "queue.Queue[dict | None]" = queue.Queue()
+    # reuse the common request execution path used by benchmarks
     stats = RunnerStats()
     runners = [
         Runner(
             runner_id=x,
             endpoint=endpoint,
-            jobs=jobs,
             stats=stats,
             request_timeout=request_timeout_s,
             enable_metrics=enable_metrics,
@@ -329,14 +326,15 @@ def run_simulator(
             )
 
             # queue the request (do not wait for completion to enable concurrency)
-            jobs.put(
-                {
-                    "name": "simulator",
-                    "url": completions_url,
-                    "headers": {"Content-Type": "application/json"},
-                    "payload": payload,
-                }
-            )
+            for runner in runners:
+                runner.queue_job(
+                    {
+                        "name": "simulator",
+                        "url": completions_url,
+                        "headers": {"Content-Type": "application/json"},
+                        "payload": payload,
+                    }
+                )
 
             completed += actual_req_tokens
             kv_filled = min(completed, effective_kv)
@@ -344,9 +342,6 @@ def run_simulator(
 
             if req_idx < requests_per_run - 1:
                 time.sleep(request_interval_s)
-
-        # wait for all requests in this run to complete
-        jobs.join()
 
         print(
             f"  Run {run_idx + 1} complete. Total KV filled: {min(completed, effective_kv)}/{effective_kv}"
@@ -356,10 +351,8 @@ def run_simulator(
             time.sleep(run_interval_s)
 
     # terminate the runner thread
-    for _ in runners:
-        jobs.put(None)
-
-    jobs.join()
+    for runner in runners:
+        runner.queue_job(None)
 
     for r in runners:
         r.join()
