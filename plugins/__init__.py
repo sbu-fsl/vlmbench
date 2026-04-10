@@ -1,10 +1,9 @@
-"""Plugin registry."""
-
 import argparse
 
 from plugins.readiness.readiness import register_parser as register_readiness_parser
 from plugins.simulator.simulator import register_parser as register_simulator_parser
 
+# registered plugins
 REGISTRY = {
     "readiness": register_readiness_parser,
     "simulator": register_simulator_parser,
@@ -13,6 +12,7 @@ REGISTRY = {
 
 def list_all():
     """Return list of all registered plugin names."""
+
     return sorted(REGISTRY.keys())
 
 

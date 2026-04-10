@@ -16,12 +16,13 @@ from .text_sources import (
     make_source,
 )
 
+# configuration constants
 PROMPT_RATIO = 1.0 / 3.0
 REQUEST_INTERVAL_S = 1.0
 RUN_INTERVAL_S = 2.0
 DEFAULT_REQUEST_TIMEOUT_S = 10.0
-MIN_PROMPT_TOKENS = 16
-MIN_GEN_TOKENS = 16
+MIN_PROMPT_TOKENS = 1024
+MIN_GEN_TOKENS = 512
 
 
 def _split_tokens(total_tokens: int) -> Tuple[int, int]:
@@ -50,20 +51,23 @@ def _split_tokens(total_tokens: int) -> Tuple[int, int]:
     return prompt_tokens, gen_tokens
 
 
-def _build_prompt(prefix_text: str, suffix: str) -> str:
-    """Concatenate the shared *prefix_text* with a task-instruction *suffix*.
+def _build_prompt(prefix: str, suffix: str) -> str:
+    """Concatenate the shared *prefix* with a task-instruction *suffix*.
 
     Parameters
     ----------
-    prefix_test : str
+    prefix : str
+        Shared prefix text.
     suffix : str
+        Task-instruction suffix.
 
     Returns
     -------
     prompt : str
+        The combined prompt with prefix and suffix.
     """
 
-    return f"{prefix_text}\n\n{suffix}"
+    return f"{prefix}\n\n{suffix}"
 
 
 def _build_payload(
@@ -78,7 +82,7 @@ def _build_payload(
     Parameters
     ----------
     endpoint : str
-        vLLM address.
+        vLLM OpenAI-compatible address.
     model : str
         Model name.
     prompt : str
@@ -91,6 +95,7 @@ def _build_payload(
     Returns
     -------
     payload : dict
+        The payload of request.
     """
 
     payload: dict = {
@@ -177,7 +182,7 @@ def run_simulator(
 
     completions_url = f"{endpoint.rstrip('/')}/v1/completions"
 
-    # KV-token budget
+    # kv-token budget
     effective_kv = max(1, int(math.ceil(total_kv_tokens * (utilization_perc / 100.0))))
     max_single = max(1, max_model_len - 2)
     target_tokens = min(effective_kv, max_single)
@@ -199,7 +204,7 @@ def run_simulator(
     _CHARS_PER_TOKEN = 4
     prefix_chars = prefix_tokens * _CHARS_PER_TOKEN
 
-    # Report
+    # report
     print("=" * 56)
     print("  KV-Cache Prefix Simulator")
     print("=" * 56)
@@ -266,7 +271,7 @@ def run_simulator(
             )
             client_suffixes[client_id] = client_pair.suffix
 
-    # reuse the common request execution path used by benchmarks
+    # create runners to handle the requests
     stats = RunnerStats()
     runners = [
         Runner(
