@@ -233,7 +233,7 @@ def run_simulator(
 
     # build the shared prefix via the text source
     print(f"\nLoading text source '{source_type}'…")
-    source: TextSource = make_source(source_type, cache_dir=cache_dir, seed=42)
+    source: TextSource = make_source(source_type, cache_dir=cache_dir, seed=seed)
 
     # deterministic seed, same passage every time this function is called,
     # which is exactly what we want so the KV cache prefix is stable across runs.
