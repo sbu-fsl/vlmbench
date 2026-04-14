@@ -87,6 +87,7 @@ class VLMBench:
         max_model_len: int = 0,
         truncate: bool = False,
         enable_metrics: bool = False,
+        max_tokens: Optional[int] = None,
     ):
         """Run a benchmark."""
 
@@ -117,6 +118,9 @@ class VLMBench:
 
             if not payload.get("prompt") and not payload.get("messages"):
                 continue
+
+            if max_tokens is not None:
+                payload["max_tokens"] = max_tokens
 
             # trucate payload if requested
             if truncate and max_model_len > 0:
@@ -256,6 +260,7 @@ class VLMBench:
                 max_model_len=max_model_len,
                 truncate=args.truncate,
                 enable_metrics=args.enable_prometheus_metrics,
+                max_tokens=args.max_tokens,
             )
 
             total_n += n

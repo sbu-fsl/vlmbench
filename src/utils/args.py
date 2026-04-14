@@ -72,6 +72,12 @@ def build_parser(vars: Dict[str, str]) -> argparse.ArgumentParser:
         help="Number of concurrent clients (default: 1)",
     )
     bench_parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=None,
+        help="Max tokens to generate for each prompt (default: 2048)",
+    )
+    bench_parser.add_argument(
         "benchmarks",
         nargs="*",
         help="Benchmark names to run",
