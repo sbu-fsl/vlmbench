@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import enum
+import os
 import random
 import textwrap
 from abc import ABC, abstractmethod
@@ -155,22 +156,41 @@ class WikitextSource(TextSource):
         seed: Optional[int] = None,
     ) -> None:
         import datasets as hfds
-        import os
-
-        # check if dataset exists in cache directory first
-        path = os.path.join(cache_dir, "wikitext-103-raw-v1") if cache_dir else None
-        if path and os.path.isdir(path):
-            self._ds = hfds.load_from_disk(path)
-        else:
-            self._ds = hfds.load_dataset(
-                "wikitext",
-                "wikitext-103-raw-v1",
-                split=split,
-                cache_dir=cache_dir,
-            )
 
         self._rng = random.Random(seed)
+
+        dataset_path = None
+        if cache_dir:
+            dataset_path = os.path.join(cache_dir, f"wikitext-103-raw-v1-{split}")
+
+        # try loading from local disk cache
+        if dataset_path and os.path.exists(dataset_path):
+            try:
+                self._ds = hfds.load_from_disk(dataset_path)
+            except Exception:
+                self._ds = self._load_and_cache(hfds, split, cache_dir, dataset_path)
+        else:
+            # download and cache
+            self._ds = self._load_and_cache(hfds, split, cache_dir, dataset_path)
+
         self._size = len(self._ds)
+
+    def _load_and_cache(self, hfds, split, cache_dir, dataset_path):
+        ds = hfds.load_dataset(
+            "wikitext",
+            "wikitext-103-raw-v1",
+            split=split,
+            cache_dir=cache_dir,
+        )
+
+        # Save explicitly for future runs
+        if dataset_path:
+            try:
+                ds.save_to_disk(dataset_path)
+            except Exception:
+                pass
+
+        return ds
 
     def fetch_passage(self, min_chars: int = 500, max_chars: int = 3000) -> str:
         """Concatenate consecutive wikitext rows until we have at least *min_chars*
