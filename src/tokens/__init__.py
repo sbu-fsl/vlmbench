@@ -209,7 +209,7 @@ def truncate_payload(
 
     generation_tokens = payload.get("max_tokens")
     if generation_tokens is None:
-        raise ValueError("Payload must include 'max_tokens' when using --truncate")
+        generation_tokens = 512  # default max_tokens to account for generation length in the token limit calculation
 
     # calculate the limit
     limit = max_model_len - generation_tokens - 32

@@ -84,8 +84,7 @@ def _chat_input(entry, *conversation_keys):
 
     opts = {
         "messages": messages,
-        "temperature": 0.7,
-        "max_tokens": 1024,
+        "temperature": 0.0,
         "top_p": 0.95,
     }
     return "", opts

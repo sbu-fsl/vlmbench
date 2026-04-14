@@ -13,7 +13,7 @@ class Task(ABC):
         """Return the model name."""
 
         return self._model
-
+    
     @abstractmethod
     def payload(self, prompt: str, opts: dict) -> dict:
         """Build an HTTP-ready request dict.

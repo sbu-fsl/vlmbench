@@ -21,7 +21,7 @@ class AlpacaBenchmark(Benchmark):
         inst = _to_text(entry.get("instruction"))
         inp = _to_text(entry.get("input"))
         prompt = inst if not inp else f"{inst}\n\nInput: {inp}"
-        opts = {"temperature": 0.0, "max_tokens": 512}
+        opts = {"temperature": 0.0}
         return prompt, opts
 
     @classmethod
@@ -38,7 +38,7 @@ class LocalAlpacaBenchmark(Benchmark):
         inst = _to_text(entry.get("instruction"))
         inp = _to_text(entry.get("input"))
         prompt = inst if not inp else f"{inst}\n\nInput: {inp}"
-        opts = {"temperature": 0.0, "max_tokens": 1024}
+        opts = {"temperature": 0.0}
         return prompt, opts
 
     @classmethod
