@@ -155,13 +155,19 @@ class WikitextSource(TextSource):
         seed: Optional[int] = None,
     ) -> None:
         import datasets as hfds
+        import os
 
-        self._ds = hfds.load_dataset(
-            "wikitext",
-            "wikitext-103-raw-v1",
-            split=split,
-            cache_dir=cache_dir,
-        )
+        # check if dataset exists in cache directory first
+        path = os.path.join(cache_dir, "wikitext-103-raw-v1") if cache_dir else None
+        if path and os.path.isdir(path):
+            self._ds = hfds.load_from_disk(path)
+        else:
+            self._ds = hfds.load_dataset(
+                "wikitext",
+                "wikitext-103-raw-v1",
+                split=split,
+                cache_dir=cache_dir,
+            )
 
         self._rng = random.Random(seed)
         self._size = len(self._ds)
