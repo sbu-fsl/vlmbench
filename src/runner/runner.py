@@ -66,6 +66,7 @@ class Runner(threading.Thread):
                     return
 
                 self._process(
+                    index=job["index"],
                     name=job["name"],
                     url=job["url"],
                     headers=job["headers"],
@@ -78,6 +79,7 @@ class Runner(threading.Thread):
 
     def _process(
         self,
+        index: str,
         name: str,
         url: str,
         headers: Dict[str, str],
@@ -87,6 +89,8 @@ class Runner(threading.Thread):
 
         Parameters
         ----------
+        index : str
+            The position of the current request among the total number of requests.
         name : str
             A name for the request, used for logging purposes.
         url : str
@@ -128,10 +132,6 @@ class Runner(threading.Thread):
                 json=payload,
                 timeout=self._rto,
             )
-
-            # dump the response content into a file for debugging
-            with open(f"{self.id()}-{name}-response.json", "w") as f:
-                json.dump(response.json(), f, indent=2)
 
             # calculate latency in milliseconds
             http_latency = (time.perf_counter() - start) * 1000
@@ -181,7 +181,7 @@ class Runner(threading.Thread):
 
         # log the process
         print(
-            f"[{self.id()}] [{http_status}] {name} "
+            f"[{self.id()}] [{index}] [{http_status}] {name} "
             f"latency={http_latency:.2f}ms "
             f"req={http_req_bytes}B "
             f"resp={http_res_bytes}B "
