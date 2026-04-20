@@ -334,6 +334,7 @@ def run_simulator(
             for runner in runners:
                 runner.queue_job(
                     {
+                        "index": f"{run_idx + 1}-{req_idx + 1}",
                         "name": "simulator",
                         "url": completions_url,
                         "headers": {"Content-Type": "application/json"},
