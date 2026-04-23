@@ -155,9 +155,11 @@ class Runner(threading.Thread):
                 # extract token counts from the response if available
                 try:
                     response_json = response.json()
-                    prompt_tokens = response_json.get("prompt_tokens", 0)
-                    completion_tokens = response_json.get("completion_tokens", 0)
-                    total_tokens = response_json.get("total_tokens", 0)
+                    if "usage" in response_json:
+                        usage = response_json["usage"]
+                        prompt_tokens = usage.get("prompt_tokens", 0)
+                        completion_tokens = usage.get("completion_tokens", 0)
+                        total_tokens = usage.get("total_tokens", 0)
                 except Exception:
                     pass  # if token counts are not available or response is not JSON, ignore the error
             else:
