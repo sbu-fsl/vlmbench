@@ -120,6 +120,9 @@ class Runner(threading.Thread):
         pre_metrics: MetricsSnapshot = None
         post_metrics: MetricsSnapshot = None
 
+        # dump the request body to a file for debugging purposes
+        print(f"Request body for [{self.id()}] [{index}] {name}:\n{request_body}")
+
         try:
             # if metrics collection is enabled, take a snapshot of metrics before sending the request
             if self._enable_metrics:
