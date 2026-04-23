@@ -23,6 +23,8 @@ RUN_INTERVAL_S = 2.0
 DEFAULT_REQUEST_TIMEOUT_S = 10.0
 MIN_PROMPT_TOKENS = 1024
 MIN_GEN_TOKENS = 512
+_CHARS_PER_TOKEN = 4
+_MAX_SUFFIX_CHUNKS = 64
 
 
 def _split_tokens(total_tokens: int) -> Tuple[int, int]:
@@ -68,6 +70,54 @@ def _build_prompt(prefix: str, suffix: str) -> str:
     """
 
     return f"{prefix}\n\n{suffix}"
+
+
+def _build_sized_suffix(
+    source: TextSource,
+    base_suffix: str,
+    target_suffix_tokens: int,
+) -> str:
+    """Build a long suffix that roughly matches the target token budget.
+
+    Parameters
+    ----------
+    source : TextSource
+        Text backend used to fetch additional natural-language filler.
+    base_suffix : str
+        Task instruction to preserve at the start of the suffix.
+    target_suffix_tokens : int
+        Approximate suffix target token length.
+
+    Returns
+    -------
+    str
+        Expanded suffix text.
+    """
+
+    target_chars = max(1, target_suffix_tokens * _CHARS_PER_TOKEN)
+    parts = [base_suffix.strip()]
+    current_chars = len(parts[0])
+
+    # Keep appending passage chunks until the suffix is close to the target size.
+    for _ in range(_MAX_SUFFIX_CHUNKS):
+        if current_chars >= target_chars:
+            break
+
+        remaining = target_chars - current_chars
+        min_chunk_chars = max(200, min(1500, remaining // 2))
+        max_chunk_chars = max(min_chunk_chars, min(8000, remaining * 2))
+        chunk = source.fetch_passage(
+            min_chars=min_chunk_chars,
+            max_chars=max_chunk_chars,
+        ).strip()
+
+        if not chunk:
+            break
+
+        parts.append(chunk)
+        current_chars += len(chunk) + 2
+
+    return "\n\n".join(parts)
 
 
 def _build_payload(
@@ -201,7 +251,6 @@ def run_simulator(
 
     # approximate character budget for the passage
     # ~4 chars per sub-word token is a reasonable heuristic.
-    _CHARS_PER_TOKEN = 4
     prefix_chars = prefix_tokens * _CHARS_PER_TOKEN
 
     # report
@@ -269,7 +318,11 @@ def run_simulator(
                 max_prefix_chars=prefix_chars * 2,
                 rng=suffix_rng,
             )
-            client_suffixes[client_id] = client_pair.suffix
+            client_suffixes[client_id] = _build_sized_suffix(
+                source=source,
+                base_suffix=client_pair.suffix,
+                target_suffix_tokens=suffix_tokens,
+            )
 
     # create runners to handle the requests
     stats = RunnerStats()
@@ -313,7 +366,11 @@ def run_simulator(
                     max_prefix_chars=prefix_chars * 2,
                     rng=suffix_rng,
                 )
-                suffix = req_pair.suffix
+                suffix = _build_sized_suffix(
+                    source=source,
+                    base_suffix=req_pair.suffix,
+                    target_suffix_tokens=suffix_tokens,
+                )
 
             # build the prompt with prefix and suffix
             prompt = _build_prompt(prefix_text, suffix)
