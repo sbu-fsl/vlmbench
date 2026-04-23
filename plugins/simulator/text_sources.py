@@ -311,6 +311,37 @@ _DEFAULT_TASKS = [
 ]
 
 
+def pick_task_and_suffix(
+    source: TextSource,
+    task: Optional[TaskType] = None,
+    rng: Optional[random.Random] = None,
+    qa_max_chars: int = 3000,
+) -> tuple[TaskType, str]:
+    """Pick a task and suffix using only the provided RNG.
+
+    This helper is intended for deterministic suffix generation in simulator
+    paths that do not need to build a full (prefix, suffix) prompt pair.
+    """
+
+    if rng is None:
+        rng = random.Random()
+
+    selected_task = task
+    if selected_task is None:
+        selected_task = (
+            TaskType.QA if isinstance(source, SQuADSource) else rng.choice(_DEFAULT_TASKS)
+        )
+
+    if selected_task == TaskType.QA and isinstance(source, SQuADSource):
+        _, question = source.fetch_qa_pair(max_chars=qa_max_chars)
+        return (
+            selected_task,
+            f"Based on the passage above, answer the following question:\n{question}",
+        )
+
+    return selected_task, rng.choice(_SUFFIX_TEMPLATES[selected_task])
+
+
 def build_prompt_pair(
     source: TextSource,
     task: Optional[TaskType] = None,

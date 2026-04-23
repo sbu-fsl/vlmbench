@@ -14,6 +14,7 @@ from .text_sources import (
     TextSource,
     build_prompt_pair,
     make_source,
+    pick_task_and_suffix,
 )
 
 # configuration constants
@@ -311,16 +312,15 @@ def run_simulator(
     client_suffixes: Dict[int, str] = {}
     if suffix_mode == "fixed":
         for client_id in range(num_clients):
-            client_pair = build_prompt_pair(
+            _, client_suffix = pick_task_and_suffix(
                 source,
                 task=task,
-                min_prefix_chars=max(100, prefix_chars // 2),
-                max_prefix_chars=prefix_chars * 2,
                 rng=suffix_rng,
+                qa_max_chars=prefix_chars * 2,
             )
             client_suffixes[client_id] = _build_sized_suffix(
                 source=source,
-                base_suffix=client_pair.suffix,
+                base_suffix=client_suffix,
                 target_suffix_tokens=suffix_tokens,
             )
 
@@ -367,17 +367,16 @@ def run_simulator(
                 # use pre-generated client-specific suffix
                 suffix = client_suffixes[client_id]
             else:  # random mode
-                # generate new suffix for each request
-                req_pair = build_prompt_pair(
+                # Generate a seeded pseudo-random suffix per request.
+                _, req_suffix = pick_task_and_suffix(
                     source,
                     task=task,
-                    min_prefix_chars=max(100, prefix_chars // 2),
-                    max_prefix_chars=prefix_chars * 2,
                     rng=suffix_rng,
+                    qa_max_chars=prefix_chars * 2,
                 )
                 suffix = _build_sized_suffix(
                     source=source,
-                    base_suffix=req_pair.suffix,
+                    base_suffix=req_suffix,
                     target_suffix_tokens=suffix_tokens,
                 )
 
