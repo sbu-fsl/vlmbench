@@ -148,6 +148,9 @@ class Runner(threading.Thread):
             # record success or error based on status code
             if http_status == 200:
                 self._stats.record_success(http_latency, http_req_bytes, http_res_bytes)
+
+                # dump the response content for debugging purposes
+                print(f"Response content for {name}:\n{response.json()}")
             else:
                 self._stats.record_error(http_latency, http_req_bytes, http_res_bytes)
 

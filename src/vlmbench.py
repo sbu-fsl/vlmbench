@@ -168,6 +168,10 @@ class VLMBench:
     def _print_summary(self, name: str) -> None:
         """Export the runners summary into stdout."""
 
+        if self._stats is None:
+            print("No stats available.")
+            return
+
         # print the summary of benchmark
         summary = self._stats.stats()
 
