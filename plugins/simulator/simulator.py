@@ -324,6 +324,15 @@ def run_simulator(
                 target_suffix_tokens=suffix_tokens,
             )
 
+    # tune the request timeout based on the expected generation size to reduce noise from stragglers
+    expected_latency_ms = 100 + gen_tokens * 50
+    tuned_timeout_s = max(request_timeout_s, expected_latency_ms / 1000.0)
+    if tuned_timeout_s > request_timeout_s:
+        print(
+            f"[INFO] Adjusting request timeout to {tuned_timeout_s:.1f} seconds based on expected generation size."
+        )
+        request_timeout_s = tuned_timeout_s
+
     # create runners to handle the requests
     stats = RunnerStats()
     runners = [
