@@ -20,6 +20,7 @@ class Runner(threading.Thread):
         stats: RunnerStats,
         request_timeout: int,
         enable_metrics: bool = False,
+        verbose: bool = False,
     ):
         """Initialize a Runner thread."""
 
@@ -30,7 +31,7 @@ class Runner(threading.Thread):
         self._rto = request_timeout
         self._stats = stats
         self._enable_metrics = enable_metrics
-
+        self._verbose = verbose
         self._jobs = queue.Queue[Optional[Dict[str, Any]]]()
         self._stop_event = threading.Event()
 
@@ -120,8 +121,9 @@ class Runner(threading.Thread):
         pre_metrics: MetricsSnapshot = None
         post_metrics: MetricsSnapshot = None
 
-        # dump the request body to a file for debugging purposes
-        print(f"Request body for [{self.id()}] [{index}] {name}:\n{request_body}")
+        if self._verbose:
+            # dump the request body to a file for debugging purposes
+            print(f"Request body for [{self.id()}] [{index}] {name}:\n{request_body}")
 
         try:
             # if metrics collection is enabled, take a snapshot of metrics before sending the request
