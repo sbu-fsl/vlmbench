@@ -114,6 +114,9 @@ class Runner(threading.Thread):
         http_req_bytes: int = len(request_body.encode("utf-8"))
         http_res_bytes: int = 0
         http_latency: float = 0
+        prompt_tokens: int = 0
+        total_tokens: int = 0
+        completion_tokens: int = 0
         pre_metrics: MetricsSnapshot = None
         post_metrics: MetricsSnapshot = None
 
@@ -149,8 +152,14 @@ class Runner(threading.Thread):
             if http_status == 200:
                 self._stats.record_success(http_latency, http_req_bytes, http_res_bytes)
 
-                # dump the response content for debugging purposes
-                print(f"Response content for {name}:\n{response.json()}")
+                # extract token counts from the response if available
+                try:
+                    response_json = response.json()
+                    prompt_tokens = response_json.get("prompt_tokens", 0)
+                    completion_tokens = response_json.get("completion_tokens", 0)
+                    total_tokens = response_json.get("total_tokens", 0)
+                except Exception:
+                    pass  # if token counts are not available or response is not JSON, ignore the error
             else:
                 self._stats.record_error(http_latency, http_req_bytes, http_res_bytes)
 
@@ -189,5 +198,6 @@ class Runner(threading.Thread):
             f"req={http_req_bytes}B "
             f"resp={http_res_bytes}B "
             f"\nstart={start} , end={start + (http_latency / 1000)}",
+            f"\nprompt_tokens={prompt_tokens} , completion_tokens={completion_tokens} , total_tokens={total_tokens}",
             f"\n{metrics_str}",
         )
