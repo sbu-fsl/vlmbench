@@ -77,6 +77,7 @@ def _build_sized_suffix(
     source: TextSource,
     base_suffix: str,
     target_suffix_tokens: int,
+    filler_text: Optional[str] = None,
 ) -> str:
     """Build a long suffix that roughly matches the target token budget.
 
@@ -88,6 +89,9 @@ def _build_sized_suffix(
         Task instruction to preserve at the start of the suffix.
     target_suffix_tokens : int
         Approximate suffix target token length.
+    filler_text : str | None
+        Optional deterministic filler pool. If provided, suffix expansion uses
+        this text instead of fetching additional random passages.
 
     Returns
     -------
@@ -99,7 +103,9 @@ def _build_sized_suffix(
     parts = [base_suffix.strip()]
     current_chars = len(parts[0])
 
-    # Keep appending passage chunks until the suffix is close to the target size.
+    filler_pool = " ".join((filler_text or "").split())
+
+    # Keep appending chunks until the suffix is close to the target size.
     for _ in range(_MAX_SUFFIX_CHUNKS):
         if current_chars >= target_chars:
             break
@@ -107,10 +113,19 @@ def _build_sized_suffix(
         remaining = target_chars - current_chars
         min_chunk_chars = max(200, min(1500, remaining // 2))
         max_chunk_chars = max(min_chunk_chars, min(8000, remaining * 2))
-        chunk = source.fetch_passage(
-            min_chars=min_chunk_chars,
-            max_chars=max_chunk_chars,
-        ).strip()
+        if filler_pool:
+            # Build deterministic chunks by slicing a repeated local pool.
+            doubled = f"{filler_pool} {filler_pool}"
+            start = (current_chars * 131) % len(filler_pool)
+            chunk = doubled[start : start + max_chunk_chars].strip()
+            if len(chunk) < min_chunk_chars:
+                repeats = max(2, (min_chunk_chars // max(1, len(filler_pool))) + 2)
+                chunk = (f"{filler_pool} " * repeats)[:max_chunk_chars].strip()
+        else:
+            chunk = source.fetch_passage(
+                min_chars=min_chunk_chars,
+                max_chars=max_chunk_chars,
+            ).strip()
 
         if not chunk:
             break
@@ -163,6 +178,17 @@ def _build_payload(
     return payload
 
 
+def _derive_seed(base_seed: int, *parts: int) -> int:
+    """Derive a stable integer seed from a base seed and index parts."""
+
+    value = base_seed & 0xFFFFFFFFFFFFFFFF
+    for part in parts:
+        value ^= (part + 0x9E3779B97F4A7C15) & 0xFFFFFFFFFFFFFFFF
+        value = (value * 0xBF58476D1CE4E5B9) & 0xFFFFFFFFFFFFFFFF
+
+    return value
+
+
 def run_simulator(
     endpoint: str,
     model: str,
@@ -181,6 +207,8 @@ def run_simulator(
     request_timeout_s: float = DEFAULT_REQUEST_TIMEOUT_S,
     num_clients: int = 1,
     suffix_mode: str = "fixed",
+    wikipedia_prefetch_count: int = 0,
+    wikipedia_snapshot_path: Optional[str] = None,
 ) -> None:
     """Fire synthetic requests to simulate KV-cache usage with prefix sharing.
 
@@ -229,6 +257,12 @@ def run_simulator(
         Suffix selection mode: ``"fixed"`` (same suffix with prefix prefix)
         or ``"random"`` (randomly select suffix for each request).
         For multi-client with "random", adds randomness in both client and suffix selection.
+    wikipedia_prefetch_count : int
+        Number of Wikipedia passages to prefetch into a local pool. Set to 0
+        to disable prefetch (default 0).
+    wikipedia_snapshot_path : str | None
+        Optional JSON path used to load/save prefetched Wikipedia passages for
+        strict cross-run reproducibility.
     """
 
     completions_url = f"{endpoint.rstrip('/')}/v1/completions"
@@ -280,6 +314,12 @@ def run_simulator(
         f"  Client configuration      : {num_clients} {'client' if num_clients == 1 else 'clients'}"
     )
     print(f"  Suffix mode               : {suffix_mode}")
+    if source_type == "wikipedia":
+        print(f"  Wikipedia prefetch count  : {wikipedia_prefetch_count}")
+        print(
+            "  Wikipedia snapshot path   : "
+            f"{wikipedia_snapshot_path if wikipedia_snapshot_path else '(disabled)'}"
+        )
     if effective_kv > max_single:
         print(
             "  [WARN] Target exceeds single-request capacity; capped at max_model_len."
@@ -289,6 +329,24 @@ def run_simulator(
     # build the shared prefix via the text source
     print(f"\nLoading text source '{source_type}'…")
     source: TextSource = make_source(source_type, cache_dir=cache_dir, seed=seed)
+
+    if source_type == "wikipedia" and wikipedia_prefetch_count > 0:
+        snapshot_path = wikipedia_snapshot_path
+        if snapshot_path is None and cache_dir:
+            snapshot_path = (
+                f"{cache_dir.rstrip('/')}/simulator_wikipedia_seed{seed}.json"
+            )
+
+        if hasattr(source, "prefetch_passages"):
+            loaded = source.prefetch_passages(  # type: ignore[attr-defined]
+                count=wikipedia_prefetch_count,
+                min_chars=max(400, prefix_chars // 2),
+                max_chars=max(prefix_chars * 2, 4000),
+                snapshot_path=snapshot_path,
+            )
+            print(f"[INFO] Wikipedia prefetch pool size: {loaded}")
+            if snapshot_path:
+                print(f"[INFO] Wikipedia snapshot file: {snapshot_path}")
 
     # deterministic seed, same passage every time this function is called,
     # which is exactly what we want so the KV cache prefix is stable across runs.
@@ -306,22 +364,24 @@ def run_simulator(
     print(f"  «{prefix_text[:160].rstrip()}…»")
     print(f"  Task: {pair.task.value}\n")
 
-    suffix_rng = random.Random(seed)
-
     # for fixed mode, generate client suffixes deterministically
     client_suffixes: Dict[int, str] = {}
+    use_prefetch_filler = source_type == "wikipedia" and wikipedia_prefetch_count > 0
+
     if suffix_mode == "fixed":
         for client_id in range(num_clients):
+            client_rng = random.Random(_derive_seed(seed, 1, client_id))
             _, client_suffix = pick_task_and_suffix(
                 source,
                 task=task,
-                rng=suffix_rng,
+                rng=client_rng,
                 qa_max_chars=prefix_chars * 2,
             )
             client_suffixes[client_id] = _build_sized_suffix(
                 source=source,
                 base_suffix=client_suffix,
                 target_suffix_tokens=suffix_tokens,
+                filler_text=None if use_prefetch_filler else prefix_text,
             )
 
     # tune the request timeout based on the expected generation size to reduce noise from stragglers
@@ -368,16 +428,20 @@ def run_simulator(
                 suffix = client_suffixes[client_id]
             else:  # random mode
                 # Generate a seeded pseudo-random suffix per request.
+                request_rng = random.Random(
+                    _derive_seed(seed, 2, run_idx, req_idx, client_id)
+                )
                 _, req_suffix = pick_task_and_suffix(
                     source,
                     task=task,
-                    rng=suffix_rng,
+                    rng=request_rng,
                     qa_max_chars=prefix_chars * 2,
                 )
                 suffix = _build_sized_suffix(
                     source=source,
                     base_suffix=req_suffix,
                     target_suffix_tokens=suffix_tokens,
+                    filler_text=None if use_prefetch_filler else prefix_text,
                 )
 
             # build the prompt with prefix and suffix
@@ -534,6 +598,17 @@ def register_parser(
         default="fixed",
         help="Suffix selection mode: 'fixed' uses same suffix per client, 'random' generates new suffix for each request (default: fixed)",
     )
+    parser.add_argument(
+        "--wikipedia-prefetch-count",
+        type=int,
+        default=0,
+        help="Number of wikipedia passages to prefetch for deterministic random prompts (default: 0)",
+    )
+    parser.add_argument(
+        "--wikipedia-snapshot-path",
+        default=None,
+        help="Optional JSON file path to load/save wikipedia prefetch pool",
+    )
     parser.set_defaults(plugin_runner=run_from_args)
 
 
@@ -583,4 +658,6 @@ def run_from_args(args: argparse.Namespace) -> None:
         enable_metrics=args.enable_prometheus_metrics,
         num_clients=args.num_clients,
         suffix_mode=args.suffix_mode,
+        wikipedia_prefetch_count=args.wikipedia_prefetch_count,
+        wikipedia_snapshot_path=args.wikipedia_snapshot_path,
     )

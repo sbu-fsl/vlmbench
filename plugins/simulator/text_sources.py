@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import enum
+import json
 import os
 import random
 import textwrap
@@ -268,28 +269,167 @@ class WikipediaSource(TextSource):
         self._wp = _wp
         self._wp.set_lang(lang)
         self._rng = random.Random(seed)
+        self._seed = seed
+        self._page_cache: dict[str, str] = {}
+        self._prefetched_passages: list[str] = []
+
+    def _page_text(self, title: str, max_chars: int) -> str:
+        cached = self._page_cache.get(title)
+        if cached is not None:
+            return cached[:max_chars]
+
+        page = self._wp.page(title, auto_suggest=False, preload=False)
+        # Strip section headings that start with == for cleaner prose chunks.
+        lines = [line for line in page.content.splitlines() if not line.startswith("=")]
+        text = " ".join(lines).strip()
+        self._page_cache[title] = text
+        return text[:max_chars]
+
+    def _load_prefetch_snapshot(
+        self,
+        snapshot_path: str,
+        min_chars: int,
+        max_chars: int,
+        max_count: int,
+    ) -> bool:
+        if not os.path.exists(snapshot_path):
+            return False
+
+        try:
+            with open(snapshot_path, "r", encoding="utf-8") as fp:
+                data = json.load(fp)
+        except Exception:
+            return False
+
+        if not isinstance(data, dict):
+            return False
+
+        raw_passages = data.get("passages")
+        if not isinstance(raw_passages, list):
+            return False
+
+        loaded: list[str] = []
+        for item in raw_passages:
+            if not isinstance(item, str):
+                continue
+            text = " ".join(item.split())[:max_chars].strip()
+            if len(text) >= min_chars:
+                loaded.append(text)
+            if len(loaded) >= max_count:
+                break
+
+        self._prefetched_passages = loaded
+        return len(self._prefetched_passages) > 0
+
+    def _save_prefetch_snapshot(self, snapshot_path: str) -> None:
+        payload = {
+            "version": 1,
+            "seed": self._seed,
+            "passages": self._prefetched_passages,
+        }
+
+        parent = os.path.dirname(snapshot_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+
+        with open(snapshot_path, "w", encoding="utf-8") as fp:
+            json.dump(payload, fp, ensure_ascii=False)
+
+    def prefetch_passages(
+        self,
+        count: int,
+        min_chars: int = 500,
+        max_chars: int = 3000,
+        snapshot_path: Optional[str] = None,
+    ) -> int:
+        """Populate an in-memory deterministic passage pool.
+
+        If *snapshot_path* exists, passages are loaded from disk for strict
+        cross-run reproducibility. Otherwise, passages are fetched and optionally
+        saved to *snapshot_path*.
+        """
+
+        count = max(0, int(count))
+        if count == 0:
+            self._prefetched_passages = []
+            return 0
+
+        if snapshot_path and self._load_prefetch_snapshot(
+            snapshot_path=snapshot_path,
+            min_chars=min_chars,
+            max_chars=max_chars,
+            max_count=count,
+        ):
+            return len(self._prefetched_passages)
+
+        passages: list[str] = []
+        attempts = 0
+        max_attempts = max(50, count * 12)
+
+        while len(passages) < count and attempts < max_attempts:
+            attempts += 1
+            try:
+                title = self._rng.choice(_WIKIPEDIA_TOPICS)
+                text = self._page_text(title=title, max_chars=max_chars)
+            except self._wp.exceptions.DisambiguationError as exc:
+                if not exc.options:
+                    continue
+                try:
+                    option = sorted(exc.options)[self._rng.randint(0, len(exc.options) - 1)]
+                    text = self._page_text(title=option, max_chars=max_chars)
+                except Exception:
+                    continue
+            except Exception:
+                continue
+
+            text = " ".join(text.split()).strip()
+            if len(text) >= min_chars:
+                passages.append(text)
+
+        # Fill shortages deterministically from fallback text to keep count stable.
+        while len(passages) < count:
+            rotation = len(passages) * 113
+            doubled = f"{_FALLBACK_TEXT} {_FALLBACK_TEXT}"
+            start = rotation % len(_FALLBACK_TEXT)
+            filler = doubled[start : start + max_chars].strip()
+            if len(filler) < min_chars:
+                filler = (_FALLBACK_TEXT * 2)[:max_chars].strip()
+            passages.append(filler)
+
+        self._prefetched_passages = passages
+        if snapshot_path:
+            try:
+                self._save_prefetch_snapshot(snapshot_path)
+            except Exception:
+                pass
+
+        return len(self._prefetched_passages)
 
     def fetch_passage(self, min_chars: int = 500, max_chars: int = 3000) -> str:
-        for _ in range(10):
-            try:
-                topic = self._rng.choice(_WIKIPEDIA_TOPICS)
-                results = self._wp.search(topic, results=6)
-
-                if not results:
-                    continue
-
-                title = self._rng.choice(results)
-                page = self._wp.page(title, auto_suggest=False)
-
-                # strip section headings that start with ==
-                lines = [
-                    line
-                    for line in page.content.splitlines()
-                    if not line.startswith("=")
-                ]
-                text = " ".join(lines).strip()[:max_chars]
+        if self._prefetched_passages:
+            for _ in range(10):
+                text = self._rng.choice(self._prefetched_passages)[:max_chars].strip()
                 if len(text) >= min_chars:
                     return text
+
+        for _ in range(10):
+            try:
+                title = self._rng.choice(_WIKIPEDIA_TOPICS)
+                text = self._page_text(title=title, max_chars=max_chars)
+                if len(text) >= min_chars:
+                    return text
+
+            except self._wp.exceptions.DisambiguationError as exc:
+                if not exc.options:
+                    continue
+                # Resolve ambiguity deterministically by taking sorted first.
+                resolved_title = sorted(exc.options)[0]
+                try:
+                    text = self._page_text(title=resolved_title, max_chars=max_chars)
+                    if len(text) >= min_chars:
+                        return text
+                except Exception:
+                    continue
 
             except Exception:
                 continue
