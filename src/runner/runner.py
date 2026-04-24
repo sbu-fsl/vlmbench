@@ -118,6 +118,8 @@ class Runner(threading.Thread):
         prompt_tokens: int = 0
         total_tokens: int = 0
         completion_tokens: int = 0
+        start_datetime: str = ""
+        end_datetime: str = ""
         pre_metrics: MetricsSnapshot = None
         post_metrics: MetricsSnapshot = None
 
@@ -131,6 +133,7 @@ class Runner(threading.Thread):
                 pre_metrics = fetch_snapshot(base_url=self._endpoint, timeout=self._rto)
 
             # start the timer for latency measurement
+            start_datetime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             start = time.perf_counter()
 
             # send the request
@@ -143,6 +146,7 @@ class Runner(threading.Thread):
 
             # calculate latency in milliseconds
             http_latency = (time.perf_counter() - start) * 1000
+            end_datetime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
             # if metrics collection is enabled, take a snapshot of metrics after receiving the response
             if self._enable_metrics and pre_metrics:
@@ -204,7 +208,7 @@ class Runner(threading.Thread):
             f"latency={http_latency:.2f}ms "
             f"req={http_req_bytes}B "
             f"resp={http_res_bytes}B "
-            f"\nstart={start} , end={start + (http_latency / 1000)}",
+            f"\nstart={start_datetime} , end={end_datetime}",
             f"\nprompt_tokens={prompt_tokens} , completion_tokens={completion_tokens} , total_tokens={total_tokens}",
             f"\n{metrics_str}",
         )
