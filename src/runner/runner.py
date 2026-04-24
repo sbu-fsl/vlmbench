@@ -179,6 +179,8 @@ class Runner(threading.Thread):
             http_latency = (
                 self._rto * 1000
             )  # set latency to the request timeout value in milliseconds
+            
+            end_datetime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
             # on timeout record a timeout, but do post metrics poll if enabled
             self._stats.record_timeout(http_req_bytes)
