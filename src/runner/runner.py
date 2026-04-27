@@ -158,8 +158,9 @@ class Runner(threading.Thread):
                 time.sleep(1)
 
                 # take a metrics snapshot
+                tout = self._rto if self._rto else 10  # use request timeout or a default value for metrics fetch timeout
                 metrics_snapshot = fetch_snapshot(
-                    base_url=self._endpoint, timeout=self._rto
+                    base_url=self._endpoint, timeout=tout
                 )
 
             http_status = response.status_code
@@ -199,8 +200,9 @@ class Runner(threading.Thread):
                 time.sleep(1)
 
                 # take a metrics snapshot
+                tout = self._rto if self._rto else 10  # use request timeout or a default value for metrics fetch timeout
                 metrics_snapshot = fetch_snapshot(
-                    base_url=self._endpoint, timeout=self._rto
+                    base_url=self._endpoint, timeout=tout
                 )
 
         except Exception as e:
