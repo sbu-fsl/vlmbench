@@ -133,12 +133,20 @@ class Runner(threading.Thread):
             start = time.perf_counter()
 
             # send the request
-            response = requests.post(
-                url,
-                headers=headers,
-                json=payload,
-                timeout=self._rto,
-            )
+            response: requests.Response
+            if self._rto:
+                response = requests.post(
+                    url,
+                    headers=headers,
+                    json=payload,
+                    timeout=self._rto,
+                )
+            else:
+                response = requests.post(
+                    url,
+                    headers=headers,
+                    json=payload,
+                )
 
             # calculate latency in milliseconds
             http_latency = (time.perf_counter() - start) * 1000
