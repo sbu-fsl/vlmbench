@@ -203,7 +203,7 @@ class Runner(threading.Thread):
         if self._enable_metrics:
             values = metrics_snapshot.as_dict()
             metrics_str = "\n".join(
-                f"vllm:{metric} = {value:.2f}" for metric, value in values.items()
+                f"vllm:{metric} = {value:.4f}" for metric, value in values.items()
             )
 
         # log the process
