@@ -120,18 +120,14 @@ class Runner(threading.Thread):
         completion_tokens: int = 0
         start_datetime: str = ""
         end_datetime: str = ""
-        pre_metrics: MetricsSnapshot = None
-        post_metrics: MetricsSnapshot = None
+        
+        metrics_snapshot: MetricsSnapshot = None
 
         if self._verbose:
             # dump the request body to a file for debugging purposes
             print(f"Request body for [{self.id()}] [{index}] {name}:\n{request_body}")
 
         try:
-            # if metrics collection is enabled, take a snapshot of metrics before sending the request
-            if self._enable_metrics:
-                pre_metrics = fetch_snapshot(base_url=self._endpoint, timeout=self._rto)
-
             # start the timer for latency measurement
             start_datetime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             start = time.perf_counter()
@@ -149,8 +145,12 @@ class Runner(threading.Thread):
             end_datetime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
             # if metrics collection is enabled, take a snapshot of metrics after receiving the response
-            if self._enable_metrics and pre_metrics:
-                post_metrics = fetch_snapshot(
+            if self._enable_metrics:
+                # wait a short moment to ensure that the metrics are updated after processing the request
+                time.sleep(1)
+
+                # take a metrics snapshot
+                metrics_snapshot = fetch_snapshot(
                     base_url=self._endpoint, timeout=self._rto
                 )
 
@@ -186,8 +186,12 @@ class Runner(threading.Thread):
             self._stats.record_timeout(http_req_bytes)
 
             # if metrics collection is enabled, take a snapshot of metrics after the timeout
-            if self._enable_metrics and pre_metrics:
-                post_metrics = fetch_snapshot(
+            if self._enable_metrics:
+                # wait a short moment to ensure that the metrics are updated after processing the request
+                time.sleep(1)
+
+                # take a metrics snapshot
+                metrics_snapshot = fetch_snapshot(
                     base_url=self._endpoint, timeout=self._rto
                 )
 
@@ -196,10 +200,8 @@ class Runner(threading.Thread):
 
         # calculate and print the differences in metrics values before and after the request
         metrics_str = ""
-        if self._enable_metrics and pre_metrics and post_metrics:
-            values = post_metrics.delta(pre_metrics)
-            self._stats.record_vllm_metrics(values)
-
+        if self._enable_metrics:
+            values = metrics_snapshot.as_dict()
             metrics_str = "\n".join(
                 f"vllm:{metric} = {value:.2f}" for metric, value in values.items()
             )

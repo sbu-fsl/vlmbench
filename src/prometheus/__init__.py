@@ -6,8 +6,6 @@ import requests
 
 _PREFIX = "vllm:"  # prefix for all metrics to avoid name collisions
 _METRICS = [
-    "prefix_cache_queries_total",
-    "prefix_cache_hits_total",
     "request_prompt_tokens_sum",
     "request_generation_tokens_sum",
     "request_prefill_kv_computed_tokens_sum",
@@ -47,6 +45,17 @@ class MetricsSnapshot:
         """
 
         return self.metrics.get(name, 0.0)
+    
+    def as_dict(self) -> Dict[str, float]:
+        """Return the metrics as a dictionary.
+
+        Returns
+        -------
+        Dict[str, float]
+            A dictionary mapping metric names to their values.
+        """
+
+        return self.metrics
 
     def delta(self, earlier: "MetricsSnapshot") -> Dict[str, float]:
         """Return the deltas of all metrics compared to an earlier snapshot.
