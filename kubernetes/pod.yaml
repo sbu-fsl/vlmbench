@@ -9,37 +9,9 @@ spec:
   restartPolicy: Never
   containers:
     - name: vlmbench
-      image: python:3.11-slim-bookworm
-      imagePullPolicy: IfNotPresent
+      image: amirhossein21/vlmbench:latest
+      imagePullPolicy: Always
       workingDir: /workspace/vlmbench
-      command: ["/bin/bash", "-lc"]
-      args:
-        - |
-          set -euo pipefail
-
-          if ! command -v git >/dev/null 2>&1; then
-            apt-get update
-            apt-get install -y --no-install-recommends git
-            rm -rf /var/lib/apt/lists/*
-          fi
-
-          mkdir -p "${REPO_DIR}"
-          if [ ! -d "${REPO_DIR}/.git" ]; then
-            git clone "${REPO_URL}" "${REPO_DIR}"
-          else
-            git -C "${REPO_DIR}" pull --ff-only
-          fi
-
-          cd "${REPO_DIR}"
-          python -m pip install --no-cache-dir --upgrade pip
-          python -m pip install --no-cache-dir -r requirements.txt
-
-          if [ -z "${COMMAND:-}" ]; then
-            echo "Set COMMAND to the benchmark command you want this pod to run." >&2
-            exec bash
-          fi
-
-          exec bash -lc "${COMMAND}"
       env:
         - name: REPO_URL
           value: https://github.com/sbu-fsl/vlmbench
