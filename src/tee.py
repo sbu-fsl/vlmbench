@@ -14,6 +14,7 @@ class Tee:
         """Write data to both the file and the console."""
 
         self._file.write(data)
+        self._file.flush()
         self._stdout.write(data)
 
     def flush(self) -> None:
