@@ -2,6 +2,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: vlmbench
+  namespace: llm-servings
   labels:
     app: vlmbench
 spec:
@@ -44,8 +45,16 @@ spec:
           value: https://github.com/sbu-fsl/vlmbench
         - name: REPO_DIR
           value: /workspace/vlmbench
+        - name: KC
+          value: "llama-1b-models.llm-servings.svc.cluster.local"
+        - name: PORT
+          value: "80"
+        - name: REQUEST_TIMEOUT
+          value: "0"
+        - name: EXPORT_OUTPUT
+          value: "/mnt/gpfs/llm-datasets/vlmbench.txt"
         - name: COMMAND
-          value: "REQUEST_TIMEOUT=0 python main.py bench --clients 1 local_sharegpt --enable-prometheus-metrics --stop-after 200 --export-output case2.2.txt --endpoint ${KC}:31665"
+          value: "python main.py bench --clients 1 local_sharegpt --enable-prometheus-metrics --stop-after 200 --export-output ${EXPORT_OUTPUT} --endpoint ${KC}:${PORT}"
         - name: DEFAULT_DATA_DIR
           value: /mnt/gpfs/llm-datasets
         - name: HF_HOME
