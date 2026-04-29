@@ -13,6 +13,8 @@ spec:
       imagePullPolicy: Always
       workingDir: /workspace/vlmbench
       env:
+        - name: PYTHONNUNBUFFERED
+          value: "1"
         - name: REPO_URL
           value: https://github.com/sbu-fsl/vlmbench
         - name: REPO_DIR
