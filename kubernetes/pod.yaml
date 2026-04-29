@@ -18,7 +18,7 @@ spec:
         - name: REPO_DIR
           value: /workspace/vlmbench
         - name: KC
-          value: "llama-1b-models.llm-servings.svc.cluster.local"
+          value: "http://llama-1b-models.llm-servings.svc.cluster.local"
         - name: PORT
           value: "80"
         - name: REQUEST_TIMEOUT
